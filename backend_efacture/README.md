@@ -70,7 +70,7 @@ L'application sera accessible à l'adresse : http://localhost:3000
 Créez un fichier `.env` à la racine du projet avec les variables suivantes :
 
 ```
-PORT=5000
+PORT=6000
 NODE_ENV=development
 JWT_SECRET=votre_clé_secrète
 LDAP_URL=ldap://votre-serveur-ldap:389
