@@ -1578,7 +1578,12 @@ function MainApp() {
       const isBlank = (v) => v === null || v === undefined || String(v).trim() === '';
       const isB2FExport =
         String(formattedInvoiceData.template).toUpperCase() === 'B2F' &&
-        (formattedInvoiceData.pointOfSale === 'FACTURE_EXPORT' || selectedPos === 'FACTURE_EXPORT');
+        (
+          formattedInvoiceData.pointOfSale === 'FACTURE_EXPORT' ||
+          selectedPos === 'FACTURE_EXPORT' ||
+          invoice?.invoice_type_code === 'FACTURE_EXPORT' ||
+          invoice?.data?.[0]?.import_view === 'FACTURE_EXPORT'
+        );
       const missing = [];
       if (isBlank(formattedInvoiceData.clientCompanyName)) missing.push('Nom client (clientCompanyName)');
       if (isBlank(formattedInvoiceData.clientPhone))       missing.push('Téléphone client (clientPhone)');
@@ -1801,9 +1806,30 @@ function MainApp() {
             console.error('Erreur lors de l\'enregistrement du log d\'échec d\'envoi:', logError);
           }
 
+          // Aplatir les erreurs de validation par champ (ex: errors.commercialMessage.maxLength)
+          const buildValidationDetails = (errs) => {
+            if (!errs || typeof errs !== 'object') return '';
+            const out = [];
+            for (const field of Object.keys(errs)) {
+              const rules = errs[field];
+              if (typeof rules === 'string') {
+                out.push(`${field}: ${rules}`);
+              } else if (rules && typeof rules === 'object') {
+                for (const ruleName of Object.keys(rules)) {
+                  const val = rules[ruleName];
+                  out.push(typeof val === 'string' ? val : `${field}.${ruleName}`);
+                }
+              }
+            }
+            return out.join(' | ');
+          };
+
           // Message d'erreur plus détaillé pour l'utilisateur
           let userMessage = `Erreur lors de la signature de la facture (${response.status})`;
-          if (errorResponse.message) {
+          const validationDetails = buildValidationDetails(errorResponse.errors);
+          if (validationDetails) {
+            userMessage += `: ${validationDetails}`;
+          } else if (errorResponse.message) {
             userMessage += `: ${errorResponse.message}`;
           } else if (response.status === 500) {
             userMessage = 'Une erreur technique est survenue lors de la signature de la facture. Veuillez réessayer plus tard ou contacter le support.';
@@ -2293,14 +2319,18 @@ function MainApp() {
   const toPrint = useRef();
 
 
-  // Charger les factures au chargement du composant et quand les filtres changent
+  // Charger les factures au chargement du composant et quand les filtres changent.
+  // Debounce 400ms : évite de re-fetcher à chaque touche tapée dans la barre de recherche.
+  // Why: chaque fetch déclenche un full-scan de logs_actions côté backend (cf. getAllDownloadedInvoices).
   useEffect(() => {
-    loadDownloadedInvoices();
+    const t = setTimeout(() => loadDownloadedInvoices(), 400);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, dateFrom, dateTo, selectedPos, sortBy, sortOrder]);
 
   useEffect(() => {
-    loadSentInvoices();
+    const t = setTimeout(() => loadSentInvoices(), 400);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username, sentDateFrom, sentDateTo, sentSearchTerm, sentUserFilter, sentInvoiceTypeFilter, selectedPos, sentSortBy, sentSortOrder]);
 
@@ -2851,7 +2881,7 @@ function MainApp() {
         const isBlank = (v) => v === null || v === undefined || String(v).trim() === '';
         const headerEmail = firstRow.ClientEmail ?? firstRow.client_email ?? firstRow.clientEmail ?? '';
         const headerPhone = firstRow.ClientPhone ?? firstRow.client_phone ?? firstRow.clientPhone ?? '';
-        const headerNcc   = firstRow.ClientNcc   ?? firstRow.client_ncc   ?? firstRow.clientNCC  ?? firstRow.clientNcc ?? '';
+        const headerNcc   = firstRow.ClientNCC   ?? firstRow.ClientNcc   ?? firstRow.client_ncc   ?? firstRow.clientNCC  ?? firstRow.clientNcc ?? '';
         const headerPos   = firstRow.PointOfSale ?? firstRow.point_of_sale ?? firstRow.pointOfSale ?? '';
         const headerTpl   = (firstRow.Template   ?? firstRow.template ?? 'B2B').toString().toUpperCase();
 
