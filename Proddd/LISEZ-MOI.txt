@@ -1,0 +1,61 @@
+DÉPLOIEMENT PROD
+================
+
+Ordre conseillé : 1) SQL  ->  2) Backend  ->  3) Frontend  ->  4) Rôles
+
+--------------------------------------------------------------------
+1) BASE DE DONNÉES (backend 10.10.2.55)
+--------------------------------------------------------------------
+Exécuter DEPLOY.sql sur la base du backend.
+(Pas besoin de sequelize-cli : le SQL fait la même chose que les migrations.)
+
+--------------------------------------------------------------------
+2) BACKEND -> serveur 10.10.2.55  (puis REDÉMARRER node/pm2)
+--------------------------------------------------------------------
+Copier, en respectant l'arborescence, le contenu de :
+  Proddd\backend_efacture_21052026\   ->   dossier du backend en prod
+
+NOUVEAUX fichiers :
+  controllers\blValidationController.js
+  routes\blValidationRoutes.js
+  models\BlValidation.js
+  migrations\20260616000000-add-indexes-sap-tables.js
+  migrations\20260616000001-add-sendon-index-logs.js
+  migrations\20260617000000-create-bl-validations.js
+  migrations\20260617000001-add-bl-validation-roles.js
+
+MODIFIÉS :
+  index.js
+  controllers\downloadedInvoicesController.js
+  controllers\sentInvoicesController.js
+  controllers\sapInvoiceController.js
+  models\SapKomvCondition.js
+  models\SapVbrkHeader.js
+  models\SapVbrpItem.js
+  models\SapVbpaPartner.js
+  models\SapReferenceCmde.js
+
+--------------------------------------------------------------------
+3) FRONTEND -> serveur 10.10.2.17  (puis REBUILD : npm run build)
+--------------------------------------------------------------------
+Copier, en respectant l'arborescence, le contenu de :
+  Proddd\frontend_efacture_210526\   ->   dossier du frontend en prod
+
+NOUVEAU :
+  src\pages\BlValidationPage.js
+
+MODIFIÉS :
+  src\App.js
+  src\components\Sidebar.js
+  src\config\api.js
+
+--------------------------------------------------------------------
+4) APRÈS DÉPLOIEMENT
+--------------------------------------------------------------------
+Dans Paramètres (compte admin), attribuer aux bons utilisateurs :
+  bl.validate_logistique  (équipe logistique)
+  bl.validate_commercial  (équipe commerciale)
+  bl.view                 (lecture seule éventuelle)
+
+REMARQUE : les contrôleurs contiennent encore des logs [PERF]/[PERF-ENV]/[PERF-NONENV]
+(diagnostic). Ils sont sans danger mais verbeux ; ils peuvent être retirés.

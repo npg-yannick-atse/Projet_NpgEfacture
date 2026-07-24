@@ -1,0 +1,100 @@
+HOTFIX PERF — page "Factures envoyées" (lenteur / ERR_CONNECTION_TIMED_OUT)
+============================================================================
+Date : 2026-07-17
+Périmètre : 1 fichier backend modifié. Aucune migration, aucune permission.
+Indépendant des autres lots (Non FNE/BL, avoir). Déployable seul.
+
+----------------------------------------------------------------
+PROBLÈME
+----------------------------------------------------------------
+GET /api/logs/sent-invoices (getSentInvoices) chargeait TOUT l'historique des
+factures envoyées (aucune LIMIT, aucune date par défaut), puis faisait
+JSON.parse(api_response) sur chaque ligne côté JS. Sur un process Node
+mono-cœur (pm2 fork), ce traitement bloque l'event loop : la page met très
+longtemps, et pendant ce temps le backend ne répond plus à rien -> lenteur
+générale de l'appli + "Failed to fetch / ERR_CONNECTION_TIMED_OUT".
+
+----------------------------------------------------------------
+CE QUE FAIT LE HOTFIX
+----------------------------------------------------------------
+backend_efacture_21052026/controllers/sentInvoicesController.js  (MODIFIÉ)
+  - Si AUCUN filtre de date ni recherche n'est posé : borne par défaut aux
+    SENT_DEFAULT_DAYS derniers jours (défaut 60).
+  - Plafond dur SENT_MAX_ROWS (défaut 2000) sur la requête logs_actions
+    (tri SendOn DESC), pour borner le pire cas même avec une date large.
+  => coupe le scan de tout l'historique et le JSON.parse de milliers de lignes.
+
+  - FIX RECHERCHE (perf) : suppression du scan `api_response LIKE '%..%'`.
+    C'était un scan complet d'une colonne TEXT (~86 Mo) => ~34 s PAR recherche.
+    La référence FNE est déjà trouvée via fne_invoices.fne_reference (indexé),
+    et le numéro via son index. Mesuré : recherche ~60 s -> < 0,1 s.
+    Effet de bord : on ne cherche plus dans le contenu brut du JSON d'un log
+    (une facture reste trouvable par son numéro ou sa référence FNE).
+
+  PRÉREQUIS de ce fix recherche (INDEX, à faire une fois en base) :
+    CREATE INDEX idx_fne_reference ON fne_invoices (fne_reference);
+    (sans lui, la recherche par référence = ~26 s de scan de fne_invoices)
+
+  - FIX AVOIRS "orphelins / (log manquant)" (affichage, pas perf) :
+    Quand un avoir partageait le même numéro que sa facture initiale (ex. P0067Y),
+    il apparaissait EN DOUBLE : une fois correctement en "Avoir", une fois en
+    "Facture ... (log manquant)". Cause : le log de l'avoir n'a pas d'invoice.id
+    (la cert FNE de l'avoir a un id synthétique REFUND_<reference>), donc le
+    rattachement se faisait sur la facture initiale (fallback par numéro), et la
+    ligne fne_invoices de l'avoir était réinjectée en "orphelin".
+    Corrigé :
+      1) rattachement du log d'avoir à sa ligne via l'id REFUND_<reference> ;
+      2) l'injection "orpheline" respecte fne_invoices.type (refund => "Avoir",
+         plus jamais étiqueté "Facture") ;
+      3) ajout de la colonne `type` dans la requête des orphelines.
+
+  - FIX "Avoir orphelin" (facture initiale hors période) :
+    La fenêtre/plafond peut exclure une facture initiale plus ANCIENNE alors que
+    son avoir (plus récent) est chargé -> l'avoir apparaissait "orphelin".
+    (Mesuré : fenêtre 60j = 3439 envois > plafond 2000 ; les factures initiales
+    étaient aux rangs 2103/2249/2327/3589 donc hors liste.)
+    Corrigé : on injecte automatiquement le log d'envoi des FACTURES INITIALES
+    manquantes des avoirs affichés, pour que le regroupement avoir->facture marche
+    même si le parent est hors fenêtre/plafond. Reste borné (≈ nb d'avoirs affichés).
+
+Réglable sans re-déployer via variables d'environnement (.env du backend) :
+    SENT_DEFAULT_DAYS=60
+    SENT_MAX_ROWS=2000
+
+IMPORTANT (comportement) : par défaut la page montre désormais les 60 derniers
+jours (max 2000 lignes). Pour voir plus ancien, utiliser le filtre de dates de
+la page (déjà présent) — il interroge la base sans le plafond de fenêtre.
+
+Pourquoi PAS de pagination page-par-page SQL : la vue applique des filtres
+côté client qui corrèlent une facture avec ses avoirs/annulations
+("Avec avoirs", "Avec annulation"). Une pagination SQL casserait ces
+corrélations (facture et avoir sur des pages différentes). La borne par
+fenêtre de dates préserve la justesse de ces filtres.
+
+----------------------------------------------------------------
+DÉPLOIEMENT (backend 10.10.2.55)
+----------------------------------------------------------------
+1) Copier controllers/sentInvoicesController.js dans le backend prod.
+2) (Optionnel) ajouter SENT_DEFAULT_DAYS / SENT_MAX_ROWS dans le .env.
+3) Redémarrer : pm2 restart <app>  (ou pm2 reload)
+
+----------------------------------------------------------------
+FORTEMENT RECOMMANDÉ (en complément, pas dans ce fichier)
+----------------------------------------------------------------
+1) INDEX SendOn sur logs_actions (rend la fenêtre de dates réellement rapide).
+   Vérifier qu'il existe en prod, sinon :
+     CREATE INDEX idx_logs_sendon ON logs_actions (SendOn);
+   (une migration add-sendon-index-logs existe déjà dans le dossier Proddd)
+   Vérifier aussi : fne_invoices(numero_facture), downloaded_invoices(numero).
+
+2) pm2 en mode CLUSTER (2 à 4 instances) au lieu de fork : une requête lourde
+   ne fige plus toute l'appli. Voir ecosystem.config.js.
+
+3) Moyen terme : stocker reference / total_ttc / point_of_sale en colonnes au
+   moment de l'envoi pour ne plus parser le JSON à l'affichage.
+
+----------------------------------------------------------------
+TEST
+----------------------------------------------------------------
+- Ouvrir "Factures envoyées" sans filtre : doit charger vite (60 derniers jours).
+- Poser un filtre de dates plus large : charge la période demandée (borné à 2000).

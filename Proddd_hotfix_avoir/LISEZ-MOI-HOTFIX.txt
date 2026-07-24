@@ -1,0 +1,46 @@
+HOTFIX — Avoir total + correction bug "/" (factures Succursale)
+================================================================
+Date : 2026-07-17
+Périmètre : 1 fichier backend (nouveau correctif) + 1 fichier frontend (modifié)
+Aucune migration SQL, aucune nouvelle permission.
+
+Ce lot est INDÉPENDANT du lot Non FNE/BL (dossier Proddd). Il peut être déployé seul.
+
+----------------------------------------------------------------
+CONTENU
+----------------------------------------------------------------
+backend_efacture_21052026/routes/fneInvoiceRoutes.js   (MODIFIÉ)
+    Route GET /by-sap-number/* en wildcard : accepte les numéros contenant
+    un "/" (ex. Succursale "P26/81K"). Avant, la route à segment unique
+    renvoyait une 404 HTML -> "Facture non trouvée" dans la modale d'avoir.
+
+frontend_efacture_210526/src/App.js                    (MODIFIÉ)
+    1) encodeURIComponent(invoiceNumber) sur l'appel BY_SAP_NUMBER
+       -> corrige aussi le "/" côté client (ceinture + bretelles avec le backend).
+    2) Case à cocher "Avoir total" dans la modale d'avoir : quand cochée,
+       remet pour chaque article la même quantité que la facture (avoir sur
+       toute la facture) ; décochée => tout à 0 ; une saisie manuelle décoche.
+    NB : cette copie part de Proddd/…/App.js, donc les DIFFS PROD sont conservés
+         (URL FNE prod + token prod + titre). NE PAS remplacer par le App.js de dev.
+
+----------------------------------------------------------------
+DÉPLOIEMENT
+----------------------------------------------------------------
+1) BACKEND (serveur 10.10.2.55)
+   - Copier : backend_efacture_21052026/routes/fneInvoiceRoutes.js
+              -> dossier du backend en prod (même chemin routes/).
+   - Redémarrer : pm2 restart <app>   (ou pm2 reload)
+
+2) FRONTEND (serveur 10.10.2.17)
+   - Copier : frontend_efacture_210526/src/App.js
+              -> dossier du frontend en prod (même chemin src/).
+   - Rebuild : npm run build  -> déployer le /build.
+
+----------------------------------------------------------------
+TEST DE VALIDATION
+----------------------------------------------------------------
+- Ouvrir "Factures envoyées", flèche "Créer un avoir" sur une facture Succursale
+  (numéro type "P.../...", ex. P26/81K) : la modale doit charger les 3 lignes
+  (plus de 404).
+- Cocher "Avoir total" : les 3 quantités se remplissent avec les quantités
+  d'origine. Décocher : tout revient à 0.

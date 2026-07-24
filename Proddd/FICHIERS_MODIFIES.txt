@@ -1,0 +1,109 @@
+============================================================
+ E-FACTURE — FICHIERS MODIFIÉS / CRÉÉS (session de déploiement)
+ Fonctionnalités : Factures Non FNE (liste noire) + autorisations
+ + vérif SAP/nom client + mail de blocage + compteur d'impressions
+============================================================
+
+Total : 9 nouveaux fichiers + 10 fichiers modifiés (+ DEPLOY.sql)
+Tous les fichiers ci-dessous sont déjà présents dans le dossier Proddd.
+
+
+------------------------------------------------------------
+ BACKEND  (backend_efacture_21052026/)
+------------------------------------------------------------
+
+NOUVEAUX :
+  controllers/nonFneController.js
+      CRUD Non FNE + endpoint /check + vérifs (envoyée / téléchargée / SAP)
+  routes/nonFneRoutes.js
+      Routes /api/non-fne (accès par permission)
+  services/checkSapInvoice.js
+      Existence facture dans SAP (VBRK) + nom client (KNA1)
+  services/notifyNonFneBlocked.js
+      Mail de blocage — clé de notification : 4d119a18ee214d18a66b
+  migrations/20260626000000-add-non-fne-kind.js
+      Ajoute la valeur 'non_fne' à l'enum auto_download_flagged.kind
+  migrations/20260626000001-add-non-fne-author-and-roles.js
+      Colonne created_by + rôles non_fne.view / non_fne.manage
+  migrations/20260626000002-add-non-fne-delete-role.js
+      Rôle non_fne.delete
+  migrations/20260701000000-add-print-count-bl-validations.js
+      Colonne print_count (compteur d'impressions)
+
+MODIFIÉS :
+  index.js
+      Montage de la route /api/non-fne
+      (DIFF PROD VOULU : const PORT = ... || 8050)
+  models/AutoDownloadFlagged.js
+      Enum 'non_fne' + colonne created_by
+  models/BlValidation.js
+      Colonne print_count
+  services/autoDownloadJob.js
+      Le job ignore les factures présentes dans auto_download_flagged
+  controllers/sapInvoiceController.js
+      Blocage "liste noire" prioritaire au téléchargement (message clair)
+  controllers/blValidationController.js
+      recordPrint incrémente print_count + serialize renvoie print_count
+
+
+------------------------------------------------------------
+ FRONTEND  (frontend_efacture_210526/src/)
+------------------------------------------------------------
+
+NOUVEAU :
+  pages/NonFnePage.js
+      Page "Factures Non FNE" (ajout/liste/suppression, filtre date,
+      bouton Vérifier -> nom client SAP)
+
+MODIFIÉS :
+  App.js
+      Vue Non FNE (route/vue par permission) + message 409 lisible
+      (DIFFS PROD VOULUS : URL FNE prod + token prod + titre "E_Facture")
+  components/Sidebar.js
+      Entrée de menu "Factures Non FNE" (affichée par permission)
+  config/api.js
+      Endpoints NON_FNE (BASE, CHECK, BY_NUMERO)
+      (DIFF PROD VOULU : API_BASE_URL = http://10.10.2.55:8050)
+  pages/BlValidationPage.js
+      Affichage du compteur d'impressions (pointage) à côté de l'impression
+
+
+------------------------------------------------------------
+ BASE DE DONNÉES
+------------------------------------------------------------
+  DEPLOY.sql  (mis à jour)
+
+
+============================================================
+ ÉTAPES DE DÉPLOIEMENT (serveur PROD)
+============================================================
+
+1) BASE DE DONNÉES — exécuter le SQL suivant (idempotent) :
+
+   ALTER TABLE auto_download_flagged
+     MODIFY COLUMN kind ENUM('avoir','probleme','non_fne') NOT NULL;
+   ALTER TABLE auto_download_flagged ADD COLUMN created_by VARCHAR(100) NULL;
+   ALTER TABLE bl_validations ADD COLUMN print_count INT NOT NULL DEFAULT 0;
+   INSERT IGNORE INTO roles (code, label, created_at) VALUES
+     ('non_fne.view',   'Voir les factures Non FNE',                   NOW()),
+     ('non_fne.manage', 'Gérer les factures Non FNE (liste noire)',    NOW()),
+     ('non_fne.delete', 'Supprimer une facture Non FNE (liste noire)', NOW());
+
+   (Le fichier DEPLOY.sql contient l'ensemble, y compris le reste du schéma.)
+
+2) BACKEND :
+   - Copier les fichiers backend ci-dessus
+   - Redémarrer le backend (ex. pm2 restart <app>)
+     IMPORTANT : sans redémarrage, les vérifs SAP / liste noire ne tournent pas.
+
+3) FRONTEND :
+   - Copier les fichiers frontend ci-dessus
+   - Rebuild du frontend (npm run build) puis déployer
+
+4) AUTORISATIONS :
+   - Dans Paramètres -> autorisations, cocher non_fne.view / non_fne.manage /
+     non_fne.delete aux utilisateurs concernés.
+
+Rappel : les mails de notification partent vers
+http://10.10.2.17:3030/notifications — le backend doit pouvoir joindre ce service.
+============================================================

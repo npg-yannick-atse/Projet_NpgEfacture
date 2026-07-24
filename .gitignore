@@ -1,0 +1,53 @@
+# ── Secrets / configuration sensible ──
+.env
+.env.*
+*.env
+**/.env
+
+# ── Dépendances ──
+node_modules/
+**/node_modules/
+node_modules_a_copier/
+**/node_modules_a_copier/
+
+# ── Build Next.js ──
+.next/
+**/.next/
+
+# ── Builds / sorties ──
+build/
+dist/
+**/build/
+**/dist/
+
+# ── Logs ──
+*.log
+logs/
+npm-debug.log*
+yarn-error.log*
+
+# ── Données exportées (client / stats) — ne pas publier ──
+factures_*.json
+*.xlsx
+*.xls
+
+# ── Dumps DB & archives (trop volumineux / sensibles) ──
+npg_efacture.sql
+*.sql.gz
+*.dump
+*.rar
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# ── OS / éditeurs ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Temporaire ──
+*.tmp
+tmp/
+scratchpad/

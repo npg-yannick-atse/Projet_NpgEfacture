@@ -1,0 +1,57 @@
+HOTFIX PERF — page "Factures Téléchargées" (lenteur / timeout)
+================================================================
+Date : 2026-07-17
+Périmètre : 1 fichier backend modifié. Aucune migration, aucune permission.
+Indépendant des autres lots. Déployable seul.
+
+----------------------------------------------------------------
+PROBLÈME (mesuré en prod)
+----------------------------------------------------------------
+GET /api/downloaded-invoices (getAllDownloadedInvoices) :
+  - chargeait TOUS les logs envoyés (9 507) à CHAQUE ouverture ............ ~29 s
+  - excluait les envoyées via `numero NOT IN (~9 390 valeurs)` ............ ~42 s
+  => ~70 s cumulés + la colonne `data` (~100 Mo) => timeout.
+
+----------------------------------------------------------------
+CE QUE FAIT LE HOTFIX
+----------------------------------------------------------------
+backend_efacture_21052026/controllers/downloadedInvoicesController.js (MODIFIÉ)
+  Fonction getAllDownloadedInvoices :
+  1) Exclusion des factures déjà envoyées AVEC SUCCÈS via une ANTI-JOINTURE
+     SQL indexée (NOT EXISTS sur logs_actions) au lieu de charger tous les logs
+     puis NOT IN(9k valeurs).  Mesuré : ~70 s -> ~4 s.
+  2) statusMap (statut "échec") calculé UNIQUEMENT pour les factures affichées
+     (au lieu de scanner tous les logs à chaque ouverture).
+  3) Plafond dur DL_MAX_ROWS (défaut 2000) sur la requête.
+  4) Fenêtre de dates par défaut (DL_DEFAULT_DAYS, défaut 60) UNIQUEMENT pour le
+     cas lourd includeSent=true. La vue par défaut (non envoyées) N'EST PAS bornée
+     par date : elle reste petite grâce au NOT EXISTS et continue d'afficher même
+     les anciennes factures non envoyées (c'est le but de cette page).
+
+Réglable via .env (optionnel) :
+    DL_DEFAULT_DAYS=60
+    DL_MAX_ROWS=2000
+
+----------------------------------------------------------------
+PRÉREQUIS INDEX (déjà présents en prod, rien à faire a priori)
+----------------------------------------------------------------
+Le NOT EXISTS s'appuie sur des index existants de logs_actions :
+  - logs_actions_erreur (colonne erreur)
+  - index sur numero_facture
+(EXPLAIN prod : sous-requête MATERIALIZED via logs_actions_erreur -> OK.)
+
+----------------------------------------------------------------
+DÉPLOIEMENT (backend 10.10.2.55)
+----------------------------------------------------------------
+1) Copier controllers/downloadedInvoicesController.js dans le backend prod.
+2) (option) DL_DEFAULT_DAYS / DL_MAX_ROWS dans le .env.
+3) Redémarrer : pm2 restart <app>
+
+----------------------------------------------------------------
+NOTE
+----------------------------------------------------------------
+- L'autre endpoint getUserDownloadedInvoices (GET /api/downloaded-invoices/:username)
+  garde le même ancien schéma (charge sentLogs + NOT IN). Il n'est PAS utilisé par
+  la page principale (qui appelle GET /api/downloaded-invoices). Si un jour il est
+  utilisé et devient lent, appliquer la même anti-jointure.
+- Pagination : côté frontend elle est déjà cliente (pas d'appel serveur par page).

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Set-Location \"d:\\\\Users\\\\yannick.atse\\\\Desktop\\\\E_Facture\\\\frontend_efacture_05052026\"; $env:BUILD_PATH = \"build_check_dossier\"; $env:CI = \"true\"; npm run build 2>&1 | Select-Object -Last 50)",
+      "PowerShell($src = 'd:\\\\Users\\\\yannick.atse\\\\Desktop\\\\E_Facture\\\\FICHE_CM-AAAAMMJJ_NomModule_vX.X.docx_TEMPLATE.docx'; $tmp = Join-Path $env:TEMP 'fiche_cm_extract'; if \\(Test-Path $tmp\\) { Remove-Item $tmp -Recurse -Force }; New-Item -ItemType Directory -Path $tmp | Out-Null; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory\\($src, $tmp\\); Get-ChildItem $tmp -Recurse | Select-Object FullName)",
+      "PowerShell($tmp = Join-Path $env:TEMP 'fiche_cm_extract'; Get-ChildItem $tmp -Recurse -Force | Select-Object FullName | Format-Table -AutoSize)",
+      "Read(//c/Users/yannick.atse/AppData/Local/Temp/**)",
+      "Bash(git ls-tree *)",
+      "PowerShell(Get-ChildItem -Path 'd:\\\\Users\\\\yannick.atse\\\\Desktop\\\\E_Facture\\\\backend_efacture_05052026' -Recurse -File | ForEach-Object { $_.FullName.Replace\\('d:\\\\Users\\\\yannick.atse\\\\Desktop\\\\E_Facture\\\\backend_efacture_05052026\\\\','backend_efacture_05052026/'\\).Replace\\('\\\\','/'\\) } | Sort-Object | Out-File -FilePath $env:TEMP\\\\new_backend.txt -Encoding utf8; \\(Get-Content $env:TEMP\\\\new_backend.txt\\).Count)",
+      "Bash(powershell -Command 'Get-ChildItem -Path '\\\\''backend_efacture_05052026'\\\\'' -Recurse -File | Where-Object { $_.FullName -notmatch '\\\\''node_modules'\\\\'' -and $_.Name -ne '\\\\''package-lock.json'\\\\'' } | ForEach-Object { $_.FullName.Replace\\('\\\\''d:\\\\Users\\\\yannick.atse\\\\Desktop\\\\E_Facture\\\\'\\\\'', '\\\\'''\\\\''\\) } | Sort-Object')",
+      "Bash(cd \"d:\\\\Users\\\\yannick.atse\\\\Desktop\\\\E_Facture\" && git show HEAD:frontend_efacture/src/config/api.js > /tmp/old_api.js && wc -l /tmp/old_api.js)",
+      "Bash(powershell -Command 'Get-ChildItem -Path '\\\\''backend_efacture_05052026'\\\\'' -Recurse -File | Where-Object { $_.FullName -notmatch '\\\\''node_modules'\\\\'' -and $_.Name -ne '\\\\''package-lock.json'\\\\'' -and $_.Name -notmatch '\\\\''\\\\.log$'\\\\'' } | ForEach-Object { $_.FullName.Replace\\('\\\\''d:\\\\Users\\\\yannick.atse\\\\Desktop\\\\E_Facture\\\\'\\\\'', '\\\\'''\\\\''\\).Replace\\('\\\\''\\\\'\\\\'', '\\\\''/'\\\\''\\) } | Sort-Object')"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
+    ]
+  }
+}
