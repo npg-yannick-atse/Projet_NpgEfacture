@@ -8,14 +8,12 @@ import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import BlockIcon from '@mui/icons-material/Block';
-import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import { useAuth } from '../contexts/AuthContext';
 
 const Sidebar = ({
   onHomeClick,
   onListClick,
   onSentInvoicesClick,
-  onProblemInvoicesClick,
   onSettingsClick,
   onFneCancellationsClick,
   onBlValidationClick,
@@ -34,7 +32,6 @@ const Sidebar = ({
   const showHome = hasPermission('invoice.download');
   const showDownloaded = hasPermission('downloaded.view');
   const showSent = hasPermission('sent.view');
-  const showProblem = isAdmin() || hasPermission('problem.view');
 
   return (
     <Drawer
@@ -74,15 +71,6 @@ const Sidebar = ({
             <ListItemButton onClick={onSentInvoicesClick}>
               <ListItemIcon><AssignmentReturnIcon /></ListItemIcon>
               <ListItemText primary="Factures Envoyées" />
-            </ListItemButton>
-          </ListItem>
-        )}
-
-        {showProblem && (
-          <ListItem disablePadding>
-            <ListItemButton onClick={onProblemInvoicesClick}>
-              <ListItemIcon><ReportProblemIcon sx={{ color: '#ed6c02' }} /></ListItemIcon>
-              <ListItemText primary="Factures Problème" />
             </ListItemButton>
           </ListItem>
         )}

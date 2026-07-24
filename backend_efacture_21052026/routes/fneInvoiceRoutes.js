@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getFneInvoiceBySapNumber, sendRefund, getFneInvoiceById, getFneItemsByIds, manualRegisterFne, checkInvoiceStatus, repairInvoice } = require('../controllers/fneInvoiceController');
+const { getFneInvoiceBySapNumber, sendRefund, getFneInvoiceById, getFneItemsByIds, manualRegisterFne } = require('../controllers/fneInvoiceController');
 
 
 // Récupérer les détails d'une facture FNE par numéro de facture SAP.
@@ -11,16 +11,6 @@ router.get('/by-sap-number/*', (req, res, next) => {
   req.params.numeroFacture = req.params[0];
   next();
 }, getFneInvoiceBySapNumber);
-
-// Vérifier si une facture est déjà certifiée (avant relance) + repères portail + n° FNE probable.
-// Wildcard : le numéro peut contenir des "/" (ex. Succursale "P26/81K").
-router.get('/check/*', (req, res, next) => {
-  req.params.numeroFacture = req.params[0];
-  next();
-}, checkInvoiceStatus);
-
-// Réparer une facture certifiée à la FNE mais en erreur chez nous (import de l'export JSON du portail).
-router.post('/repair', repairInvoice);
 
 // Récupérer une facture FNE par ID FNE
 router.get('/:fneInvoiceId', getFneInvoiceById);

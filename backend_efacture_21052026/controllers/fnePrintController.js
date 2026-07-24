@@ -51,68 +51,45 @@ async function renderInvoicePdf(numero) {
   if (!url) return null;
 
   const browser = await getBrowser();
-  let lastFallback = null;
+  const context = await browser.newContext({ acceptDownloads: true });
+  let downloadObj = null;
+  context.on('download', (d) => { downloadObj = d; });
 
-  // Jusqu'à 2 tentatives complètes : le bouton « Exporter » du site FNE ne déclenche
-  // pas toujours le téléchargement du premier coup (génération PDF côté serveur FNE,
-  // lenteur réseau). Une seule passe = résultat non déterministe (parfois un PDF de
-  // ~2 Ko = photo de la page de vérification au lieu de la vraie facture).
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const context = await browser.newContext({ acceptDownloads: true });
-    let downloadObj = null;
-    context.on('download', (d) => { downloadObj = d; });
-    try {
-      const page = await context.newPage();
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-      try { await page.waitForLoadState('networkidle', { timeout: 12000 }); } catch (e) {}
-      await page.waitForTimeout(1500);
+  try {
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    try { await page.waitForLoadState('networkidle', { timeout: 12000 }); } catch (e) {}
+    await page.waitForTimeout(1500);
 
-      // Clique « Exporter » (jusqu'à 4x) en attendant EXPLICITEMENT l'événement
-      // download après chaque clic (jusqu'à 20 s) — c'est le point clé de la fiabilité :
-      // l'ancien code n'attendait que 1800 ms puis abandonnait.
-      for (let i = 0; i < 4 && !downloadObj; i++) {
-        const pages = context.pages();
-        const active = pages[pages.length - 1];
-        try { await active.waitForLoadState('domcontentloaded', { timeout: 8000 }); } catch (e) {}
-        const btn = exportLocator(active);
-        if ((await btn.count()) === 0) { await active.waitForTimeout(1500); continue; }
-        const [dl] = await Promise.all([
-          context.waitForEvent('download', { timeout: 20000 }).catch(() => null),
-          btn.click({ timeout: 8000 }).catch(() => {}),
-        ]);
-        if (dl) downloadObj = dl;
-      }
-
-      if (downloadObj) {
-        const p = await downloadObj.path();
-        const buf = await fs.promises.readFile(p);
-        if (buf && buf.length > 5000) return buf; // vraie facture exportée
-      }
-
-      // Si une URL .pdf est directement ouverte, on la récupère.
+    for (let i = 0; i < 3 && !downloadObj; i++) {
       const pages = context.pages();
       const active = pages[pages.length - 1];
-      const u = active.url() || '';
-      if (/\.pdf($|\?)/i.test(u)) {
-        const r = await context.request.get(u);
-        const buf = Buffer.from(await r.body());
-        if (buf && buf.length > 5000) return buf;
-      }
-
-      // Rendu de secours de la page : conservé UNIQUEMENT s'il est substantiel (> 15 Ko),
-      // pour ne JAMAIS renvoyer la page de vérification quasi vide (~2 Ko).
-      try { await active.waitForLoadState('networkidle', { timeout: 8000 }); } catch (e) {}
+      try { await active.waitForLoadState('domcontentloaded', { timeout: 8000 }); } catch (e) {}
       await active.waitForTimeout(1000);
-      const rendered = await active.pdf(PDF_OPTS);
-      if (rendered && rendered.length > 15000) lastFallback = rendered;
-    } finally {
-      try { await context.close(); } catch (e) { /* noop */ }
+      if (downloadObj) break;
+      const btn = exportLocator(active);
+      if ((await btn.count()) === 0) break;
+      try { await btn.click({ timeout: 8000 }); } catch (e) {}
+      await active.waitForTimeout(1800);
     }
-  }
 
-  // Aucun téléchargement fiable : on renvoie le rendu de secours seulement s'il est
-  // substantiel ; sinon null -> 404 (« réessayer ») plutôt qu'un PDF cassé.
-  return lastFallback;
+    if (downloadObj) {
+      const path = await downloadObj.path();
+      return await fs.promises.readFile(path);
+    }
+    const pages = context.pages();
+    const active = pages[pages.length - 1];
+    const u = active.url() || '';
+    if (/\.pdf($|\?)/i.test(u)) {
+      const r = await context.request.get(u);
+      return Buffer.from(await r.body());
+    }
+    try { await active.waitForLoadState('networkidle', { timeout: 8000 }); } catch (e) {}
+    await active.waitForTimeout(1000);
+    return await active.pdf(PDF_OPTS);
+  } finally {
+    try { await context.close(); } catch (e) { /* noop */ }
+  }
 }
 
 /**

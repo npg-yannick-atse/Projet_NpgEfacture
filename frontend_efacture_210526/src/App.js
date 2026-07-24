@@ -1106,7 +1106,6 @@ function MainApp() {
   const canDownloadInvoice = hasPermission('invoice.download');
   const canViewDownloaded = hasPermission('downloaded.view');
   const canViewSent = hasPermission('sent.view');
-  const canViewProblem = isAdmin() || hasPermission('problem.view');
   const canSendInvoice = hasPermission('invoice.send');
   const canSendRefund = hasPermission('refund.send');
   const canDeleteInvoice = hasPermission('invoice.delete');
@@ -1921,9 +1920,6 @@ function MainApp() {
       const result = await performSendInvoice(invoiceToSend);
       if (result.success) {
         await loadSentInvoices();
-        // Si on relance depuis la page "Problème", rafraîchir cette liste (la facture
-        // envoyée avec succès doit disparaître des problèmes).
-        if (viewMode === 'problems') await loadProblemInvoices();
         setInvoiceToSend(null);
       } else {
         // Afficher un message d'erreur à l'utilisateur
@@ -2328,8 +2324,7 @@ function MainApp() {
     const blocked =
       ((viewMode === 'home' || viewMode === 'download') && !canDownloadInvoice) ||
       (viewMode === 'list' && !canViewDownloaded) ||
-      (viewMode === 'sent' && !canViewSent) ||
-      (viewMode === 'problems' && !canViewProblem);
+      (viewMode === 'sent' && !canViewSent);
     if (blocked && hasAnyBlRole) {
       setViewMode('bl-validation');
     }
@@ -2381,20 +2376,6 @@ function MainApp() {
   const [sentDateTo, setSentDateTo] = useState('');
   const [sentSearchTerm, setSentSearchTerm] = useState('');
   // Filtres de la page "Factures Problème" (filtrage client sur download_date / numéro / client)
-  const [problemDateFrom, setProblemDateFrom] = useState('');
-  const [problemDateTo, setProblemDateTo] = useState('');
-  const [problemSearch, setProblemSearch] = useState('');
-  // Factures à problème = TOUS les types (chargées SANS filtre de menu, contrairement à la liste normale)
-  const [problemInvoices, setProblemInvoices] = useState([]);
-  // Dialogue "Vérifier FNE / Réparer" (page Problème) : détecte si déjà certifiée + n° FNE probable + import export portail
-  const [fneCheckOpen, setFneCheckOpen] = useState(false);
-  const [fneCheckInvoice, setFneCheckInvoice] = useState(null);
-  const [fneCheckLoading, setFneCheckLoading] = useState(false);
-  const [fneCheckResult, setFneCheckResult] = useState(null);
-  const [repairJsonText, setRepairJsonText] = useState('');
-  const [repairReference, setRepairReference] = useState('');
-  const [repairLoading, setRepairLoading] = useState(false);
-  const [repairCandidates, setRepairCandidates] = useState(null);
   const [sentUserFilter, setSentUserFilter] = useState('');
   const [sentInvoiceTypeFilter, setSentInvoiceTypeFilter] = useState('all'); // 'all', 'error', 'manual', 'normal'
   const [sentSortBy, setSentSortBy] = useState('SendOn');
@@ -3562,126 +3543,6 @@ function MainApp() {
     setIsDetailViewMode(false);
     setViewMode('sent');
     loadSentInvoices();
-  };
-
-  // Page "Factures Problème" : factures téléchargées dont l'envoi a échoué (status='failed'),
-  // relançables. Elles ont leurs `data` -> handleSendInvoice fonctionne.
-  // On charge TOUS les types (aucun filtre de menu) pour voir toutes les factures à problème.
-  const loadProblemInvoices = async () => {
-    try {
-      // Pas de pointOfSale -> toutes les non-envoyées, tous types confondus.
-      const response = await fetch(API_ENDPOINTS.DOWNLOADED_INVOICES.BASE);
-      if (response.ok) {
-        const data = await response.json();
-        setProblemInvoices(data.data || []);
-      }
-    } catch (e) {
-      console.error('Erreur lors du chargement des factures problème:', e);
-    }
-  };
-
-  const handleProblemInvoices = () => {
-    setIsDetailViewMode(false);
-    setViewMode('problems');
-    loadProblemInvoices();
-  };
-
-  // ─── Vérification FNE avant relance + réparation (page Problème) ───
-  // Appelle l'endpoint check : la facture est-elle déjà certifiée ? + n° FNE probable.
-  const fetchFneCheck = async (numero) => {
-    const res = await fetch(API_ENDPOINTS.FNE_INVOICES.CHECK(numero), {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    return res.json();
-  };
-
-  // Ouvre le dialogue Vérifier/Réparer pour une facture problème.
-  const openFneCheck = async (inv) => {
-    setFneCheckInvoice(inv);
-    setFneCheckOpen(true);
-    setFneCheckResult(null);
-    setRepairJsonText('');
-    setRepairReference('');
-    setRepairCandidates(null);
-    setFneCheckLoading(true);
-    try {
-      const data = await fetchFneCheck(inv.numero);
-      setFneCheckResult(data);
-      // Pré-remplit la référence probable exacte pour faciliter la saisie/recherche.
-      if (data?.probable?.exact && data.probable.reference) setRepairReference(data.probable.reference);
-    } catch (e) {
-      setFneCheckResult({ success: false, error: e.message });
-    } finally {
-      setFneCheckLoading(false);
-    }
-  };
-
-  // "Relancer" protégé : vérifie d'abord la FNE. Si déjà certifiée -> bloque et ouvre le dialogue.
-  const handleRelanceGuarded = async (inv) => {
-    try {
-      const data = await fetchFneCheck(inv.numero);
-      if (data?.certified) {
-        setFneCheckInvoice(inv);
-        setFneCheckResult(data);
-        setRepairCandidates(null);
-        setFneCheckOpen(true);
-        return; // relance bloquée : la facture est déjà à la FNE
-      }
-    } catch (e) {
-      // En cas d'échec du check, on n'empêche pas la relance (comportement d'origine).
-      console.warn('Vérification FNE avant relance échouée:', e.message);
-    }
-    handleSendInvoice(inv);
-  };
-
-  // Lit un fichier JSON déposé et le met dans repairJsonText.
-  const handleRepairFile = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => setRepairJsonText(String(e.target.result || ''));
-    reader.readAsText(file);
-  };
-
-  // Envoie la réparation (import de l'export JSON du portail FNE).
-  const handleRepairSubmit = async () => {
-    if (!fneCheckInvoice) return;
-    if (!repairJsonText.trim()) { notify('Déposez ou collez d\'abord l\'export JSON de la FNE.'); return; }
-    setRepairLoading(true);
-    try {
-      let parsed;
-      try { parsed = JSON.parse(repairJsonText); }
-      catch { notify('JSON invalide — vérifiez le fichier exporté du portail FNE.'); setRepairLoading(false); return; }
-
-      const res = await fetch(API_ENDPOINTS.FNE_INVOICES.REPAIR, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-        body: JSON.stringify({
-          numeroFacture: fneCheckInvoice.numero,
-          username: user?.username || 'Unknown',
-          reference: repairReference.trim() || undefined,
-          fneJson: parsed,
-        })
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        notify(`✅ ${data.message}`);
-        setFneCheckOpen(false);
-        setRepairCandidates(null);
-        await loadProblemInvoices();
-        if (typeof loadSentInvoices === 'function') loadSentInvoices();
-      } else if (data.error === 'AMBIGUOUS') {
-        // Plusieurs factures dans l'export : proposer le choix de la référence.
-        setRepairCandidates(data.candidates || []);
-        notify('Plusieurs factures dans l\'export — choisissez la référence FNE à lier.');
-      } else {
-        notify(`❌ ${data.message || data.error || 'Échec de la réparation.'}`);
-      }
-    } catch (e) {
-      notify(`Erreur réparation : ${e.message}`);
-    } finally {
-      setRepairLoading(false);
-    }
   };
 
   // Envoyer un avoir (refund) à l'API FNE depuis un avoir résolu
@@ -5699,8 +5560,7 @@ function MainApp() {
       if (response.ok) {
         console.log('Facture supprimée de la base de données avec succès');
         // Recharger la liste depuis la base de données (celle de la vue active)
-        if (viewMode === 'problems') await loadProblemInvoices();
-        else await loadDownloadedInvoices();
+        await loadDownloadedInvoices();
       } else {
         console.error('Erreur lors de la suppression de la base de données');
       }
@@ -5958,7 +5818,6 @@ function MainApp() {
         onDownloadClick={handleDownload}
         onListClick={handleListInvoices}
         onSentInvoicesClick={handleSentInvoices}
-        onProblemInvoicesClick={handleProblemInvoices}
         onManualFneClick={handleImportTemplate}
         onSettingsClick={() => { setIsDetailViewMode(false); setViewMode('settings'); }}
         onFneCancellationsClick={() => { setIsDetailViewMode(false); setViewMode('fne-cancellations'); }}
@@ -7471,135 +7330,6 @@ function MainApp() {
                 labelDisplayedRows={({ from, to, count }) => `${from}-${to} sur ${count}`}
               />
             </TableContainer>
-          </Container>
-
-        ) : viewMode === 'problems' ? (
-          <Container maxWidth={false}>
-            <Typography variant="h5" gutterBottom sx={{ mb: 1 }}>
-              Factures Problème
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Factures dont l'envoi à la FNE a échoué et qui ne sont pas encore certifiées. Vous pouvez les relancer ici.
-            </Typography>
-
-            {/* Filtres : recherche (numéro ou client) + plage de dates de téléchargement */}
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2, alignItems: 'center' }}>
-              <TextField
-                size="small"
-                label="Recherche (numéro ou client)"
-                value={problemSearch}
-                onChange={(e) => setProblemSearch(e.target.value)}
-                sx={{ minWidth: 260 }}
-              />
-              <TextField
-                size="small" type="date" label="Du" InputLabelProps={{ shrink: true }}
-                value={problemDateFrom}
-                onChange={(e) => setProblemDateFrom(e.target.value)}
-              />
-              <TextField
-                size="small" type="date" label="Au" InputLabelProps={{ shrink: true }}
-                value={problemDateTo}
-                onChange={(e) => setProblemDateTo(e.target.value)}
-              />
-              {(problemSearch || problemDateFrom || problemDateTo) && (
-                <Button size="small" onClick={() => { setProblemSearch(''); setProblemDateFrom(''); setProblemDateTo(''); }}>
-                  Réinitialiser
-                </Button>
-              )}
-            </Box>
-
-            {(() => {
-              const term = problemSearch.trim().toLowerCase();
-              const from = problemDateFrom ? new Date(problemDateFrom + 'T00:00:00') : null;
-              const to = problemDateTo ? new Date(problemDateTo + 'T23:59:59') : null;
-              const problemes = (problemInvoices || []).filter(inv => {
-                if (inv.status !== 'failed') return false;
-                if (term) {
-                  const hay = `${inv.numero || ''} ${inv.computedDetails?.nomClient || inv.client || ''}`.toLowerCase();
-                  if (!hay.includes(term)) return false;
-                }
-                if (from || to) {
-                  const d = inv.download_date ? new Date(inv.download_date) : null;
-                  if (!d) return false;
-                  if (from && d < from) return false;
-                  if (to && d > to) return false;
-                }
-                return true;
-              });
-              if (problemes.length === 0) {
-                return (
-                  <Box sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography color="success.main">Aucune facture en problème. 🎉</Typography>
-                  </Box>
-                );
-              }
-              return (
-                <>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    {problemes.length} facture(s) en problème
-                  </Typography>
-                  <TableContainer component={Paper} variant="outlined">
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Numéro</TableCell>
-                          <TableCell>Client</TableCell>
-                          <TableCell align="right">Montant TTC</TableCell>
-                          <TableCell>Téléchargée le</TableCell>
-                          <TableCell align="center">Action</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {problemes.map((inv) => (
-                          <TableRow key={inv.id || inv.numero} sx={{ backgroundColor: '#fff4e5' }}>
-                            <TableCell sx={{ fontWeight: 600 }}>{inv.numero}</TableCell>
-                            <TableCell>{inv.computedDetails?.nomClient || inv.client || 'Client inconnu'}</TableCell>
-                            <TableCell align="right">{Number(inv.computedDetails?.totalTTC || 0).toLocaleString('fr-FR')}</TableCell>
-                            <TableCell>{inv.download_date ? new Date(inv.download_date).toLocaleString('fr-FR') : '—'}</TableCell>
-                            <TableCell align="center">
-                              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  color="info"
-                                  onClick={() => openFneCheck(inv)}
-                                  title="Vérifier si la facture est déjà à la FNE (évite un doublon) et obtenir le n° FNE probable"
-                                >
-                                  Vérifier FNE
-                                </Button>
-                                {canSendInvoice && (
-                                  <Button
-                                    size="small"
-                                    variant="contained"
-                                    color="warning"
-                                    onClick={() => handleRelanceGuarded(inv)}
-                                  >
-                                    Relancer
-                                  </Button>
-                                )}
-                                {canDeleteInvoice && (
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    color="error"
-                                    onClick={() => confirmDeleteInvoice(inv)}
-                                  >
-                                    Supprimer
-                                  </Button>
-                                )}
-                                {!canSendInvoice && !canDeleteInvoice && (
-                                  <Typography variant="caption" color="text.secondary">Non autorisé</Typography>
-                                )}
-                              </Box>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </>
-              );
-            })()}
           </Container>
 
         ) : viewMode === 'sent' ? (
@@ -9315,108 +9045,6 @@ function MainApp() {
           >
             Fermer
           </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Dialogue Vérifier FNE / Réparer (page Factures Problème) */}
-      <Dialog open={fneCheckOpen} onClose={() => !repairLoading && setFneCheckOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Vérifier / Réparer — {fneCheckInvoice?.numero}</DialogTitle>
-        <DialogContent dividers>
-          {fneCheckLoading ? (
-            <Typography>Vérification en cours…</Typography>
-          ) : !fneCheckResult ? null : !fneCheckResult.success ? (
-            <Typography color="error">Erreur : {fneCheckResult.error}</Typography>
-          ) : fneCheckResult.certified ? (
-            <Box>
-              <Typography sx={{ color: 'success.main', fontWeight: 600, mb: 1 }}>✅ Déjà certifiée par la FNE</Typography>
-              <Typography variant="body2">Référence FNE : <b>{fneCheckResult.fne_reference}</b></Typography>
-              {fneCheckResult.source === 'log' && (
-                <Typography variant="caption" color="text.secondary">(référence retrouvée dans le journal d'envoi)</Typography>
-              )}
-              <Typography variant="body2" sx={{ mt: 1, color: 'warning.main' }}>
-                ⚠️ Ne pas relancer : cela créerait un doublon à la FNE.
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                <Button size="small" variant="outlined"
-                  onClick={() => window.open(API_ENDPOINTS.FNE.PRINT_PROXY(fneCheckInvoice.numero), '_blank')}>
-                  Imprimer
-                </Button>
-                <Button size="small" variant="outlined"
-                  onClick={() => { setFneCheckOpen(false); handleOpenRefundModal({ numero: fneCheckInvoice.numero, numero_facture: fneCheckInvoice.numero, fne_invoice_id: fneCheckResult.fne_invoice_id, client_name: fneCheckResult.hints?.client }); }}>
-                  Créer l'avoir
-                </Button>
-              </Box>
-            </Box>
-          ) : (
-            <Box>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                Non trouvée dans nos données. Vérifiez sur le portail FNE si un numéro a déjà été généré.
-              </Typography>
-              <Box sx={{ p: 1.5, bgcolor: '#f5f5f5', borderRadius: 1, mb: 2 }}>
-                <Typography variant="caption" color="text.secondary">Repères pour retrouver la facture sur le portail</Typography>
-                <Typography variant="body2">Numéro : <b>{fneCheckResult.hints?.numero}</b></Typography>
-                {fneCheckResult.hints?.client && <Typography variant="body2">Client : {fneCheckResult.hints.client}</Typography>}
-                {fneCheckResult.hints?.date && <Typography variant="body2">Date : {new Date(fneCheckResult.hints.date).toLocaleString('fr-FR')}</Typography>}
-                {fneCheckResult.probable?.exact && fneCheckResult.probable.reference && (
-                  <Typography variant="body2" sx={{ mt: 1, color: 'primary.main', fontWeight: 600 }}>
-                    N° FNE probable : {fneCheckResult.probable.reference} (à vérifier sur le portail)
-                  </Typography>
-                )}
-                {!fneCheckResult.probable?.exact && fneCheckResult.probable?.range && (
-                  <Typography variant="body2" sx={{ mt: 1, color: 'primary.main' }}>
-                    N° FNE probablement entre <b>{fneCheckResult.probable.range[0]}</b> et <b>{fneCheckResult.probable.range[1]}</b>
-                  </Typography>
-                )}
-                {!fneCheckResult.probable?.exact && !fneCheckResult.probable?.range && fneCheckResult.probable?.reference && (
-                  <Typography variant="body2" sx={{ mt: 1, color: 'primary.main' }}>
-                    N° FNE probable (approx.) : {fneCheckResult.probable.reference}
-                  </Typography>
-                )}
-                {fneCheckResult.probable?.note === 'no_gap' && (
-                  <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-                    Aucun numéro n'a probablement été généré (envois voisins consécutifs) → relance sûre.
-                  </Typography>
-                )}
-                {!fneCheckResult.probable && (
-                  <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>Numéro FNE probable indéterminé.</Typography>
-                )}
-              </Box>
-
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Réparer (import de l'export JSON du portail)</Typography>
-              <Button component="label" size="small" variant="outlined" sx={{ mb: 1 }}>
-                Déposer le fichier JSON
-                <input type="file" accept="application/json,.json" hidden onChange={(e) => handleRepairFile(e.target.files?.[0])} />
-              </Button>
-              <TextField
-                label="Référence FNE à lier (si l'export a plusieurs factures)"
-                size="small" fullWidth sx={{ mb: 1 }}
-                value={repairReference}
-                onChange={(e) => setRepairReference(e.target.value)}
-              />
-              {repairJsonText && (
-                <Typography variant="caption" color="success.main">JSON chargé ({repairJsonText.length} caractères).</Typography>
-              )}
-              {repairCandidates && repairCandidates.length > 0 && (
-                <Box sx={{ mt: 1, p: 1, border: '1px solid #ffcc80', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Plusieurs factures dans l'export — cliquez pour choisir :</Typography>
-                  {repairCandidates.map((c) => (
-                    <Button key={c.reference} size="small" fullWidth sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
-                      onClick={() => setRepairReference(c.reference)}>
-                      {c.reference} — {c.client || '—'} — {Number(c.amount || 0).toLocaleString('fr-FR')} — {c.items} art.
-                    </Button>
-                  ))}
-                </Box>
-              )}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setFneCheckOpen(false)} disabled={repairLoading}>Fermer</Button>
-          {fneCheckResult && fneCheckResult.success && !fneCheckResult.certified && (
-            <Button variant="contained" color="primary" onClick={handleRepairSubmit} disabled={repairLoading || !repairJsonText}>
-              {repairLoading ? 'Réparation…' : 'Réparer'}
-            </Button>
-          )}
         </DialogActions>
       </Dialog>
 

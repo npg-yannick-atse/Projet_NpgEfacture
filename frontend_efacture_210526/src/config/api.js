@@ -36,10 +36,6 @@ export const API_ENDPOINTS = {
     BY_ID: (id) => `${API_BASE_URL}/api/fne-invoices/${id}`,
     ITEMS_BY_IDS: `${API_BASE_URL}/api/fne-invoices/items/by-ids`,
     MANUAL_REGISTER: `${API_BASE_URL}/api/fne-invoices/manual-register`,
-    // Vérifie si une facture est déjà certifiée (avant relance) + n° FNE probable
-    CHECK: (numero) => `${API_BASE_URL}/api/fne-invoices/check/${encodeURIComponent(numero)}`,
-    // Répare une facture certifiée à la FNE mais en erreur chez nous (import export JSON)
-    REPAIR: `${API_BASE_URL}/api/fne-invoices/repair`,
   },
   INLINE_FIELDS: {
     UPDATE_STATUS: `${API_BASE_URL}/api/inline-fields/status`,
