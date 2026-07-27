@@ -2672,7 +2672,11 @@ function MainApp() {
 
   // Fonction pour gérer l'impression avec log
   const handlePrintInvoiceWithLog = async (token, invoiceNumber) => {
-    if (!token) return;
+    // L'impression se fait par NUMÉRO (le backend /api/fne/print/:numero retrouve le token
+    // FNE en base). On n'exige donc PLUS le token côté front : depuis l'optimisation perf,
+    // la page "Factures Envoyées" ne charge plus api_response, donc le token n'y est plus
+    // présent — l'ancien "if (!token) return" bloquait alors toute impression.
+    if (!invoiceNumber) return;
 
     // Log l'action d'impression
     try {
@@ -3938,6 +3942,8 @@ function MainApp() {
     const looksLikeAvoir = ['ZRE', 'G2', 'ZG2', 'S1', 'ZS1', 'CR', 'ZCR', 'IG', 'L2', 'ZL2'].includes(fkart)
       || fkart.endsWith('G2') || fkart.endsWith('RE') || fkart.endsWith('S1') || fkart.endsWith('CR');
     if (looksLikeAvoir) {
+      // Modal de progression : on l'ouvre dès le clic (tourne pendant les vérifs backend)
+      setAvoirDlModal({ open: true, percent: 12, label: 'Vérification de la facture initiale…', done: false });
       let blocked = !avoirSapResult || avoirSapResult.partial || avoirSapResult.success === false;
       // Si l'état local dit "bloqué", on revérifie côté backend avant de notifier :
       // l'utilisateur a peut-être téléchargé + envoyé la facture initiale entre-temps.
@@ -3954,6 +3960,7 @@ function MainApp() {
         }
       }
       if (blocked) {
+        setAvoirDlModal((m) => ({ ...m, open: false }));
         if (itemsMismatch) {
           notify({
             severity: 'error',
@@ -4026,6 +4033,7 @@ function MainApp() {
           // Vérification stricte du numéro
           const isSent = sentCheckData.data.some(s => String(s.numero_facture) === String(invoiceNumber));
           if (isSent) {
+            setAvoirDlModal((m) => ({ ...m, open: false }));
             notify(`Impossible de télécharger la facture ${invoiceNumber} :\n\nCette facture a déjà été téléchargée et ENVOYÉE.`);
             return;
           }
@@ -4049,12 +4057,25 @@ function MainApp() {
         date: existingInvoice.date,
         username: existingInvoice.username
       });
+      setAvoirDlModal((m) => ({ ...m, open: false }));
       setOpenDownloadModal(true);
       return;
     }
 
-    // Continuer avec le téléchargement normal
-    performDownload();
+    // Continuer avec le téléchargement normal.
+    // Pour un avoir : on pilote le modal de progression (spinner + étapes) autour du téléchargement.
+    if (looksLikeAvoir) {
+      setAvoirDlModal({ open: true, percent: 55, label: 'Téléchargement de l\'avoir…', done: false });
+      await performDownload();
+      setAvoirDlModal({ open: true, percent: 100, label: 'Avoir téléchargé ✓', done: true });
+      setTimeout(() => setAvoirDlModal((m) => ({ ...m, open: false })), 1000);
+      // Amener l'utilisateur au récap + bouton « Confirmer et Envoyer l'avoir ».
+      setTimeout(() => {
+        avoirConfirmRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 1150);
+    } else {
+      performDownload();
+    }
   };
 
   // Fonction pour gérer le tri
@@ -4111,6 +4132,10 @@ function MainApp() {
   const [avoirSapSending, setAvoirSapSending] = useState(false);
   const [avoirSapDownloaded, setAvoirSapDownloaded] = useState(false);
   const [avoirResolving, setAvoirResolving] = useState(false);
+  // Modal de progression du téléchargement d'un avoir (spinner + étapes)
+  const [avoirDlModal, setAvoirDlModal] = useState({ open: false, percent: 0, label: '', done: false });
+  // Ref vers le récap/bouton "Confirmer et Envoyer l'avoir" (scroll auto après téléchargement)
+  const avoirConfirmRef = useRef(null);
   const [revalidatingAvoir, setRevalidatingAvoir] = useState(false);
   const [fetchingInitialInvoice, setFetchingInitialInvoice] = useState(false);
   const [fneSending, setFneSending] = useState(null); // null ou { numeroFacture, startedAt }
@@ -4629,14 +4654,26 @@ function MainApp() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: user?.username, invoices: normalBatch }),
         });
-        const result = await resp.json().catch(() => ({}));
-        const statusByNumero = {};
-        (result.results || []).forEach(r => {
-          statusByNumero[r.numero] = (r.status === 'created' || r.status === 'already_downloaded') ? 'success' : 'error';
-        });
-        setFoundInvoices(prev => prev.map(x =>
-          statusByNumero[x.numero] ? { ...x, status: statusByNumero[x.numero] } : x
-        ));
+        // Ne PAS avaler une erreur serveur en silence : sinon les factures restent
+        // "Prêt à télécharger" et l'utilisateur croit devoir les faire une par une.
+        if (!resp.ok) {
+          const errNums = new Set(normalBatch.map(p => p.numero));
+          setFoundInvoices(prev => prev.map(x => errNums.has(x.numero) ? { ...x, status: 'error' } : x));
+          notify({
+            severity: 'error',
+            title: 'Téléchargement en masse échoué',
+            message: `Le serveur a répondu ${resp.status}. Les factures n'ont pas été enregistrées — réessayez, ou téléchargez-les individuellement.`,
+          });
+        } else {
+          const result = await resp.json().catch(() => ({}));
+          const statusByNumero = {};
+          (result.results || []).forEach(r => {
+            statusByNumero[r.numero] = (r.status === 'created' || r.status === 'already_downloaded') ? 'success' : 'error';
+          });
+          setFoundInvoices(prev => prev.map(x =>
+            statusByNumero[x.numero] ? { ...x, status: statusByNumero[x.numero] } : x
+          ));
+        }
       } catch (e) {
         console.error('Erreur téléchargement en masse (bulk):', e);
         const batchNums = new Set(normalBatch.map(p => p.numero));
@@ -6371,7 +6408,7 @@ function MainApp() {
 
                           {/* Récapitulatif et envoi */}
                           {avoirSapResult.refundPayload && avoirSapResult.refundPayload.items.length > 0 && (
-                            <Paper sx={{ p: 3, mb: 3, border: '2px solid #ff9800', bgcolor: '#fff8e1' }}>
+                            <Paper ref={avoirConfirmRef} sx={{ p: 3, mb: 3, border: '2px solid #ff9800', bgcolor: '#fff8e1' }}>
                               <Typography variant="h6" sx={{ mb: 2, color: 'warning.dark' }}>
                                 Récapitulatif de l'avoir
                               </Typography>
@@ -6535,6 +6572,8 @@ function MainApp() {
                           <TableRow>
                             <TableCell>Numéro</TableCell>
                             <TableCell>Client</TableCell>
+                            <TableCell>Facture initiale</TableCell>
+                            <TableCell>Réf FNE</TableCell>
                             <TableCell align="right">Statut</TableCell>
                             <TableCell align="right">Actions</TableCell>
                           </TableRow>
@@ -6565,6 +6604,15 @@ function MainApp() {
                                 </Box>
                               </TableCell>
                               <TableCell>{inv.client}</TableCell>
+                              {/* Facture initiale (pour les avoirs) */}
+                              <TableCell>
+                                {(inv.avoirResolution?.factureInitiale?.numero || inv.avoirResolution?.avoir?.factureInitiale) || '—'}
+                              </TableCell>
+                              {/* Référence FNE de la facture initiale */}
+                              <TableCell>
+                                {inv.avoirResolution?.factureInitiale?.fne_reference
+                                  || (inv.avoirResolution ? <Typography variant="caption" color="warning.main">(initiale non envoyée)</Typography> : '—')}
+                              </TableCell>
                               <TableCell align="right">
                                 {inv.status === 'already_downloaded' && (
                                   <Chip label="Déjà téléchargé" color="warning" size="small" />
@@ -7995,6 +8043,35 @@ function MainApp() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal de progression : téléchargement d'un avoir (spinner + barre + étapes) */}
+      <Dialog open={avoirDlModal.open} PaperProps={{ sx: { borderRadius: 3, p: 2, textAlign: 'center', minWidth: 400 } }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
+          {avoirDlModal.done
+            ? <CheckCircleIcon sx={{ fontSize: 56, color: 'success.main' }} />
+            : <CircularProgress size={56} color="warning" />}
+          <Typography variant="h6" sx={{ mt: 1 }}>
+            {avoirDlModal.done ? 'Avoir téléchargé' : 'Téléchargement de l\'avoir…'}
+          </Typography>
+          {avoirDlModal.label && (
+            <Typography variant="body2" color="text.secondary">{avoirDlModal.label}</Typography>
+          )}
+          <Box sx={{ width: '100%', mt: 1 }}>
+            <LinearProgress
+              variant="determinate"
+              value={avoirDlModal.percent}
+              color={avoirDlModal.done ? 'success' : 'warning'}
+              sx={{ height: 8, borderRadius: 4 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+              {avoirDlModal.percent}%
+            </Typography>
+          </Box>
+          {!avoirDlModal.done && (
+            <Typography variant="caption" color="text.secondary">Veuillez patienter, ne pas fermer la fenêtre…</Typography>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Modal de chargement envoi FNE */}
       <Dialog
         open={!!fneSending}
@@ -8680,27 +8757,45 @@ function MainApp() {
             {/* Compteur et pourcentage */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                {bulkDownloadProgress.current} / {bulkDownloadProgress.total} factures
+                {bulkDownloadProgress.current} / {bulkDownloadProgress.total} traitées
               </Typography>
               <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main' }}>
                 {Math.round((bulkDownloadProgress.current / bulkDownloadProgress.total) * 100)}%
               </Typography>
             </Box>
 
-            {/* Message de succès quand terminé */}
-            {bulkDownloadProgress.current === bulkDownloadProgress.total && bulkDownloadProgress.total > 0 && (
-              <Box sx={{
-                mt: 3,
-                p: 2,
-                bgcolor: 'success.light',
-                borderRadius: 2,
-                textAlign: 'center'
-              }}>
-                <Typography variant="body1" sx={{ color: 'success.dark', fontWeight: 500 }}>
-                  ✓ Téléchargement terminé avec succès !
-                </Typography>
-              </Box>
-            )}
+            {/* Bilan réel quand terminé (compte les statuts réels, pas juste "traitées") */}
+            {bulkDownloadProgress.current === bulkDownloadProgress.total && bulkDownloadProgress.total > 0 && (() => {
+              const c = { success: 0, already: 0, awaiting: 0, unresolved: 0, error: 0 };
+              (foundInvoices || []).forEach((x) => {
+                if (x.status === 'success') c.success++;
+                else if (x.status === 'already_downloaded') c.already++;
+                else if (x.status === 'awaiting_initial') c.awaiting++;
+                else if (x.status === 'avoir_unresolved') c.unresolved++;
+                else if (x.status === 'error') c.error++;
+              });
+              const downloaded = c.success + c.already;
+              const blocked = c.awaiting + c.unresolved;
+              const hasProblem = blocked > 0 || c.error > 0;
+              return (
+                <Box sx={{ mt: 3, p: 2, bgcolor: hasProblem ? 'warning.light' : 'success.light', borderRadius: 2 }}>
+                  <Typography variant="body1" sx={{ fontWeight: 600, color: hasProblem ? 'warning.dark' : 'success.dark', textAlign: 'center' }}>
+                    {hasProblem ? '⚠ Téléchargement terminé' : '✓ Téléchargement terminé avec succès !'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 1, textAlign: 'center' }}>
+                    <b>{downloaded}</b> téléchargée(s)
+                    {blocked > 0 && <> · <b>{blocked}</b> en attente</>}
+                    {c.error > 0 && <> · <b>{c.error}</b> erreur(s)</>}
+                  </Typography>
+                  {blocked > 0 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                      {c.awaiting > 0 && `${c.awaiting} avoir(s) en attente : téléchargez et envoyez d'abord leur facture initiale à la FNE, puis relancez l'avoir. `}
+                      {c.unresolved > 0 && `${c.unresolved} avoir(s) sans facture initiale identifiée.`}
+                    </Typography>
+                  )}
+                </Box>
+              );
+            })()}
           </Box>
         </DialogContent>
       </Dialog >
