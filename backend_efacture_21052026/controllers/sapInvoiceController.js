@@ -1570,6 +1570,17 @@ const resolveAvoirSap = async (req, res) => {
                 };
             }
         }
+        // Normalisation d'une désignation pour comparaison (trim, majuscules, espaces réduits).
+        const normDesig = (s) => (s || '').toString().trim().toUpperCase().replace(/\s+/g, ' ');
+        // Unités de la facture initiale indexées AUSSI par désignation : sert au fallback
+        // "même désignation même si code différent".
+        const initialUnitByDesig = {};
+        for (const it of initialVbrpItems) {
+            const dkey = normDesig(it.ARKTX);
+            if (dkey && !initialUnitByDesig[dkey]) {
+                initialUnitByDesig[dkey] = { VRKME: (it.VRKME || '').trim(), MEINS: (it.MEINS || '').trim() };
+            }
+        }
         // Snapshot des lignes de la facture initiale SAP — quantités en CARTONS (FKIMG)
         // (l'affichage des avoirs est en cartons, donc on aligne la facture initiale aussi)
         const initialSapItems = initialVbrpItems.map(it => ({
@@ -1596,12 +1607,16 @@ const resolveAvoirSap = async (req, res) => {
 
         for (const avoirItem of avoirItems) {
             const matnr = (avoirItem.MATNR || '').replace(/^0+/, '').trim();
+            const avoirDesig = normDesig(avoirItem.ARKTX);
 
-            // Chercher l'item FNE correspondant par reference (MATNR)
-            const fneItem = fneItems.find(fi => {
-                const fneRef = (fi.reference || '').replace(/^0+/, '').trim();
-                return fneRef === matnr;
-            });
+            // Matcher l'item FNE : par CODE (MATNR/reference) d'abord ; sinon par
+            // DÉSIGNATION identique (même article, code différent → on accepte quand même).
+            let matchedBy = 'code';
+            let fneItem = fneItems.find(fi => (fi.reference || '').replace(/^0+/, '').trim() === matnr);
+            if (!fneItem && avoirDesig) {
+                fneItem = fneItems.find(fi => normDesig(fi.description) === avoirDesig);
+                if (fneItem) matchedBy = 'designation';
+            }
 
             // Quantité en PIÈCES (FKLMG) — comme la facture initiale (qui utilise FKLMG).
             // CTS=FKIMG (cartons) et CLS=UMVKZ (pièces/carton) restent informatifs.
@@ -1625,7 +1640,9 @@ const resolveAvoirSap = async (req, res) => {
             if (fneItem) {
                 const qty = avoirQtyPieces; // quantité à rembourser en pièces (FKLMG) — comme la facture
                 const avoirUnit = { VRKME: avoirItem.VRKME, MEINS: avoirItem.MEINS };
-                const initialUnit = initialUnitByMatnr[matnr] || null;
+                // Unité de la facture initiale : par code si match code, sinon par désignation.
+                const initialUnit = (matchedBy === 'code' ? initialUnitByMatnr[matnr] : initialUnitByDesig[avoirDesig])
+                    || initialUnitByMatnr[matnr] || initialUnitByDesig[avoirDesig] || null;
                 const avoirUnitEff = effectiveUnit(avoirUnit);
                 const initialUnitEff = initialUnit ? effectiveUnit(initialUnit) : '';
                 const unitMatch = initialUnitEff !== '' && avoirUnitEff === initialUnitEff;
@@ -1644,9 +1661,10 @@ const resolveAvoirSap = async (req, res) => {
                     avoir_unit: avoirUnitEff,
                     initial_unit: initialUnitEff,
                     unitMatch,
+                    matchedBy,
                     unitReason: initialUnit ? null : 'INITIAL_UNIT_NOT_FOUND'
                 });
-                console.log(`MATCH: avoir MATNR=${matnr} → FNE ref=${fneItem.reference} (qty_cartons=${qty}, cts=${avoirCts}, cls=${avoirCls}) unités avoir=${avoirUnitEff} initiale=${initialUnitEff} match=${unitMatch}`);
+                console.log(`MATCH (${matchedBy}): avoir MATNR=${matnr} "${avoirItem.ARKTX || ''}" → FNE ref=${fneItem.reference} (qty_cartons=${qty}, cts=${avoirCts}, cls=${avoirCls}) unités avoir=${avoirUnitEff} initiale=${initialUnitEff} match=${unitMatch}`);
             } else {
                 unmatchedAvoirItems.push({
                     matnr: avoirItem.MATNR,
