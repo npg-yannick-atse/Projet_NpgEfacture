@@ -1638,7 +1638,12 @@ const resolveAvoirSap = async (req, res) => {
             });
 
             if (fneItem) {
-                const qty = avoirQtyPieces; // quantité à rembourser en pièces (FKLMG) — comme la facture
+                // Quantité à rembourser dans l'UNITÉ DE VENTE (VRKME) = FKIMG, car c'est
+                // l'unité que la FNE stocke (facture initiale envoyée en unité de vente).
+                // Bug corrigé : avant on prenait FKLMG (pièces), ce qui envoyait p.ex. 24
+                // avec l'étiquette « carton » → 24 cartons au lieu de 1 carton.
+                // (Vente en pièces : FKIMG = FKLMG, donc inchangé.)
+                const qty = avoirCts; // = FKIMG (unité de vente)
                 const avoirUnit = { VRKME: avoirItem.VRKME, MEINS: avoirItem.MEINS };
                 // Unité de la facture initiale : par code si match code, sinon par désignation.
                 const initialUnit = (matchedBy === 'code' ? initialUnitByMatnr[matnr] : initialUnitByDesig[avoirDesig])
