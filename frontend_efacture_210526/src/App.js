@@ -6395,8 +6395,8 @@ function MainApp() {
                                             item.avoir_unit || 'N/A'
                                           )}
                                         </MuiTableCell>
-                                        <MuiTableCell align="right">{item.quantity_available || 0}</MuiTableCell>
-                                        <MuiTableCell align="right" sx={{ fontWeight: 'bold', color: 'warning.main' }}>{item.quantity_to_refund || 0}</MuiTableCell>
+                                        <MuiTableCell align="right">{item.quantity_available || 0} {item.fne_unit === 'cartons' ? 'carton(s)' : 'pièce(s)'}</MuiTableCell>
+                                        <MuiTableCell align="right" sx={{ fontWeight: 'bold', color: 'warning.main' }}>{item.quantity_to_refund || 0} {item.fne_unit === 'cartons' ? 'carton(s)' : 'pièce(s)'}</MuiTableCell>
                                         <MuiTableCell align="right">{(parseFloat(item.avoir_netwr || 0) * 100).toLocaleString('fr-FR')}</MuiTableCell>
                                       </TableRow>
                                     ))}
@@ -6439,7 +6439,7 @@ function MainApp() {
                               {avoirSapResult.matchedItems.filter(it => it.quantity_to_refund > 0).map((item, idx) => (
                                 <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
                                   <Typography variant="body2">{item.description || item.reference} ({item.reference})</Typography>
-                                  <Typography variant="body2" fontWeight="bold">{item.quantity_to_refund} x remboursé(s)</Typography>
+                                  <Typography variant="body2" fontWeight="bold">{item.quantity_to_refund} {item.fne_unit === 'cartons' ? 'carton(s)' : 'pièce(s)'} remboursé(s)</Typography>
                                 </Box>
                               ))}
 
