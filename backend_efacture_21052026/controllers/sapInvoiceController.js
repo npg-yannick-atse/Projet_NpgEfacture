@@ -1581,6 +1581,17 @@ const resolveAvoirSap = async (req, res) => {
                 initialUnitByDesig[dkey] = { VRKME: (it.VRKME || '').trim(), MEINS: (it.MEINS || '').trim() };
             }
         }
+        // Quantités de la facture initiale (cartons=FKIMG / pièces=FKLMG) par code ET désignation.
+        // Sert de repli pour déterminer l'unité réelle stockée à la FNE si measurementUnit manque.
+        const initialQtyByMatnr = {};
+        const initialQtyByDesig = {};
+        for (const it of initialVbrpItems) {
+            const q = { fkimg: Math.abs(parseFloat(it.FKIMG) || 0), fklmg: Math.abs(parseFloat(it.FKLMG) || 0) };
+            const k = (it.MATNR || '').replace(/^0+/, '').trim();
+            if (k && !initialQtyByMatnr[k]) initialQtyByMatnr[k] = q;
+            const d = normDesig(it.ARKTX);
+            if (d && !initialQtyByDesig[d]) initialQtyByDesig[d] = q;
+        }
         // Snapshot des lignes de la facture initiale SAP — quantités en CARTONS (FKIMG)
         // (l'affichage des avoirs est en cartons, donc on aligne la facture initiale aussi)
         const initialSapItems = initialVbrpItems.map(it => ({
@@ -1638,12 +1649,29 @@ const resolveAvoirSap = async (req, res) => {
             });
 
             if (fneItem) {
-                // Quantité à rembourser dans l'UNITÉ DE VENTE (VRKME) = FKIMG, car c'est
-                // l'unité que la FNE stocke (facture initiale envoyée en unité de vente).
-                // Bug corrigé : avant on prenait FKLMG (pièces), ce qui envoyait p.ex. 24
-                // avec l'étiquette « carton » → 24 cartons au lieu de 1 carton.
-                // (Vente en pièces : FKIMG = FKLMG, donc inchangé.)
-                const qty = avoirCts; // = FKIMG (unité de vente)
+                // ── Quantité à rembourser dans l'UNITÉ RÉELLE stockée à la FNE ──
+                // La FNE indique l'unité de chaque article via measurementUnit ("pce"=pièces,
+                // "CRN"/"CAR"/"KAR"=cartons). L'unité VARIE d'une facture à l'autre, donc on ne
+                // peut PAS supposer toujours pièces (FKLMG) ni toujours cartons (FKIMG) :
+                //   - pièces  → FKLMG   - cartons → FKIMG
+                // Sans ça : p.ex. 24 (pièces) envoyé à une facture comptée en cartons = 24 cartons.
+                let fneMU = '';
+                try {
+                    const idata = typeof fneItem.item_data === 'string' ? JSON.parse(fneItem.item_data) : fneItem.item_data;
+                    fneMU = String((idata && idata.measurementUnit) || '').trim().toLowerCase();
+                } catch (e) { /* item_data absent/illisible */ }
+                const muPieces  = /^(pce|pcs|pc|st|u|un|ea|piece|pi[eè]ce)/.test(fneMU);
+                const muCartons = /^(crn|car|kar|ctn|ctr|col|cs|carton|caisse)/.test(fneMU);
+                // Repli data-driven : la quantité FNE correspond-elle aux cartons (FKIMG) de l'initiale ?
+                const initQ = (matchedBy === 'code' ? initialQtyByMatnr[matnr] : initialQtyByDesig[avoirDesig])
+                    || initialQtyByMatnr[matnr] || initialQtyByDesig[avoirDesig] || null;
+                const qFneVal = Math.abs(parseFloat(fneItem.quantity) || 0);
+                let fneEnPieces;
+                if (muPieces) fneEnPieces = true;
+                else if (muCartons) fneEnPieces = false;
+                else if (initQ && initQ.fkimg !== initQ.fklmg && qFneVal === initQ.fkimg) fneEnPieces = false; // FNE = cartons
+                else fneEnPieces = true; // défaut prudent : pièces (couvre aussi les produits unitaires FKIMG=FKLMG)
+                const qty = fneEnPieces ? avoirQtyPieces : avoirCts; // pièces=FKLMG / cartons=FKIMG
                 const avoirUnit = { VRKME: avoirItem.VRKME, MEINS: avoirItem.MEINS };
                 // Unité de la facture initiale : par code si match code, sinon par désignation.
                 const initialUnit = (matchedBy === 'code' ? initialUnitByMatnr[matnr] : initialUnitByDesig[avoirDesig])
@@ -1667,9 +1695,10 @@ const resolveAvoirSap = async (req, res) => {
                     initial_unit: initialUnitEff,
                     unitMatch,
                     matchedBy,
+                    fne_unit: fneEnPieces ? 'pieces' : 'cartons',
                     unitReason: initialUnit ? null : 'INITIAL_UNIT_NOT_FOUND'
                 });
-                console.log(`MATCH (${matchedBy}): avoir MATNR=${matnr} "${avoirItem.ARKTX || ''}" → FNE ref=${fneItem.reference} (qty_cartons=${qty}, cts=${avoirCts}, cls=${avoirCls}) unités avoir=${avoirUnitEff} initiale=${initialUnitEff} match=${unitMatch}`);
+                console.log(`MATCH (${matchedBy}): ${matnr} "${avoirItem.ARKTX || ''}" → FNE ref=${fneItem.reference} | FNE en ${fneEnPieces ? 'PIÈCES' : 'CARTONS'} (mu="${fneMU}") | remboursé=${qty} (FKLMG=${avoirQtyPieces}, FKIMG=${avoirCts}) | dispo=${fneItem.quantity}`);
             } else {
                 unmatchedAvoirItems.push({
                     matnr: avoirItem.MATNR,
