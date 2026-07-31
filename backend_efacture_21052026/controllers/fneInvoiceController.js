@@ -302,6 +302,11 @@ const sendRefund = async (req, res) => {
 
         console.log(`Avoir enregistré dans logs_actions: avoir=${logNumero}, facture initiale=${fneInvoice.numero_facture}, durée FNE=${fneDurationMs}ms`);
 
+        // Avoir envoyé avec succès -> poser is_sent sur le numéro d'avoir, sinon il reste
+        // affiché dans "Factures téléchargées non envoyées" (SQL brut, best-effort, prod-safe).
+        try { await FneInvoice.sequelize.query('UPDATE downloaded_invoices SET is_sent = 1 WHERE numero = :n', { replacements: { n: logNumero } }); }
+        catch (e) { console.warn('is_sent avoir non mis à jour:', e.message); }
+
         // Enregistrer aussi l'avoir dans fne_invoices avec type='refund'.
         // L'API FNE renvoie un nouvel id et une nouvelle référence pour l'avoir
         // (différents de la facture initiale). Champs explorés selon les variantes
