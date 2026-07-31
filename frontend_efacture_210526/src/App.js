@@ -1756,8 +1756,9 @@ function MainApp() {
             title: 'Enregistrement local échoué',
             message:
               `La facture ${invoiceNumber} a bien été CERTIFIÉE à la FNE${ref ? ` (réf ${ref})` : ''}, ` +
-              `mais elle n'a PAS pu être enregistrée dans l'application. Notez la référence, ` +
-              `réessayez ou prévenez l'administrateur — sinon elle n'apparaîtra pas dans « Factures envoyées ».`,
+              `mais elle n'a PAS pu être enregistrée dans l'application.\n\n` +
+              `⚠️ NE la RENVOYEZ PAS : elle est déjà à la FNE, un nouvel envoi créerait un DOUBLON.\n\n` +
+              `Notez la référence et prévenez l'administrateur pour la ré-enregistrer (la partie FNE est déjà faite).`,
           });
         }
 
