@@ -1726,22 +1726,39 @@ function MainApp() {
         const result = await response.json();
         console.log('Facture envoyée:', result);
 
-        // Enregistrer l'action d'envoi dans les logs
-        try {
-          await fetch(API_ENDPOINTS.LOGS.SEND, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              username: user?.username,
-              numeroFacture: invoiceNumber,
-              apiResponse: result.response || result,
-              fneResponseTimeMs: fneDurationMs
-            })
+        // Enregistrer l'action d'envoi dans NOTRE base (logs_actions). CRITIQUE : la facture
+        // est déjà certifiée à la FNE ; si cet enregistrement échoue, elle n'apparaîtra pas
+        // dans "Factures envoyées". On réessaie (réseau instable), et on PRÉVIENT si ça échoue
+        // — au lieu d'avaler l'erreur en silence.
+        let logSaved = false;
+        for (let attempt = 1; attempt <= 3 && !logSaved; attempt++) {
+          try {
+            const logResp = await fetch(API_ENDPOINTS.LOGS.SEND, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: user?.username,
+                numeroFacture: invoiceNumber,
+                apiResponse: result.response || result,
+                fneResponseTimeMs: fneDurationMs
+              })
+            });
+            logSaved = logResp.ok; // le backend renvoie 500 si l'enregistrement a réellement échoué
+          } catch (logError) {
+            console.error(`Enregistrement log d'envoi (tentative ${attempt}) échoué:`, logError);
+          }
+          if (!logSaved && attempt < 3) await new Promise(r => setTimeout(r, 800));
+        }
+        if (!logSaved) {
+          const ref = result?.reference || result?.data?.reference || result?.response?.reference || '';
+          notify({
+            severity: 'error',
+            title: 'Enregistrement local échoué',
+            message:
+              `La facture ${invoiceNumber} a bien été CERTIFIÉE à la FNE${ref ? ` (réf ${ref})` : ''}, ` +
+              `mais elle n'a PAS pu être enregistrée dans l'application. Notez la référence, ` +
+              `réessayez ou prévenez l'administrateur — sinon elle n'apparaîtra pas dans « Factures envoyées ».`,
           });
-        } catch (logError) {
-          console.error('Erreur lors de l\'enregistrement du log d\'envoi:', logError);
         }
 
         // Extraire uniquement les champs nécessaires de la réponse

@@ -136,7 +136,12 @@ const logSendAction = async (username, numeroFacture, apiResponse = null, fneRes
       }
     }
   } catch (error) {
+    // On PROPAGE : si l'enregistrement critique (LogsAction.create) échoue, la route doit
+    // renvoyer une erreur pour que le frontend le sache (sinon la facture est certifiée à la
+    // FNE mais absente de "Envoyées", en silence). Le stockage FNE/is_sent, lui, a son propre
+    // try/catch et n'arrive jamais ici.
     console.error('Erreur lors de l\'enregistrement de l\'envoi:', error);
+    throw error;
   }
 };
 
