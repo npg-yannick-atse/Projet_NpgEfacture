@@ -4299,6 +4299,21 @@ function MainApp() {
   const [isLoadingFneInvoice, setIsLoadingFneInvoice] = useState(false);
   const [isSendingRefund, setIsSendingRefund] = useState(false);
 
+  // Montant TTC d'une ligne d'avoir pour une quantité donnée, à partir des données FNE
+  // de l'article (prix unitaire `amount`, remise `discount` %, TVA dans `taxes`).
+  const refundLineTTC = (item, qty) => {
+    const q = Number(qty) || 0;
+    if (!q || !item) return 0;
+    let d = item.item_data;
+    try { if (typeof d === 'string') d = JSON.parse(d); } catch { d = null; }
+    d = d || {};
+    const unit = Number(d.amount) || 0;
+    const disc = Number(d.discount) || 0;
+    const vat = Array.isArray(d.taxes) ? d.taxes.reduce((s, t) => s + (Number(t.amount) || 0), 0) : 0;
+    const ht = q * unit * (1 - disc / 100);
+    return ht * (1 + vat / 100);
+  };
+
   // Gérer la sélection pour l'envoi en masse
   const handleToggleSelection = (id) => {
     // Vérifier si la facture est éligible (vérifiée ou import template)
@@ -9227,6 +9242,7 @@ function MainApp() {
                       <TableCell>Description</TableCell>
                       <TableCell align="right">Quantité initiale</TableCell>
                       <TableCell align="right">Quantité à rembourser</TableCell>
+                      <TableCell align="right">Montant avoir (TTC)</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -9257,8 +9273,20 @@ function MainApp() {
                             sx={{ width: 100 }}
                           />
                         </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 600, color: 'warning.dark' }}>
+                          {refundQuantities[item.fne_item_id]
+                            ? Math.round(Math.abs(refundLineTTC(item, refundQuantities[item.fne_item_id]))).toLocaleString('fr-FR') + ' F'
+                            : '—'}
+                        </TableCell>
                       </TableRow>
                     ))}
+                    {/* Total de l'avoir selon les quantités saisies */}
+                    <TableRow>
+                      <TableCell colSpan={4} align="right" sx={{ fontWeight: 'bold' }}>Total avoir (TTC)</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1.05rem', color: 'warning.dark' }}>
+                        {Math.round(Math.abs(fneInvoiceData.items.reduce((s, it) => s + refundLineTTC(it, refundQuantities[it.fne_item_id]), 0))).toLocaleString('fr-FR')} F
+                      </TableCell>
+                    </TableRow>
                   </TableBody>
                 </Table>
               </TableContainer>
