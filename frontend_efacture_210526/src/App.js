@@ -991,7 +991,14 @@ const FactureDisplay = ({
                     <TableCell>{ligne.Establishment || 'Nouvelle Parfumerie Gandour'}</TableCell> {/* Establishment */}
                     <TableCell sx={{ backgroundColor: '#ffffcc', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>{ligne.reference || 'N/A'}</TableCell> {/* Référence */}
                     <TableCell sx={{ backgroundColor: '#ffffcc', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>{ligne.designation || 'N/A'}</TableCell> {/* Désignation */}
-                    <TableCell align="right" sx={{ backgroundColor: '#ffffcc', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>{ligne.quantite ? Number(ligne.quantite).toLocaleString('fr-FR', { minimumFractionDigits: 0 }) : '0'}</TableCell> {/* Quantité (FKLMG en pièces pour SAP) */}
+                    <TableCell align="right" sx={{ backgroundColor: '#ffffcc', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>{(() => {
+                      // Cohérence quantité/unité : si vendu en CARTONS (VRKME=KAR, affiché "CRN"),
+                      // on montre la quantité EN CARTONS (ligne.cts = FKIMG) et non en pièces (FKLMG),
+                      // pour ne pas lire "24 CRN" alors que c'est 1 carton (= 24 pièces).
+                      const isCarton = String(ligne.unite || '').toUpperCase() === 'KAR';
+                      const q = (isCarton && ligne.cts !== undefined && ligne.cts !== null && ligne.cts !== '') ? ligne.cts : ligne.quantite;
+                      return q ? Number(q).toLocaleString('fr-FR', { minimumFractionDigits: 0 }) : '0';
+                    })()}</TableCell> {/* Quantité : cartons si unité=carton (CRN), sinon pièces */}
                     <TableCell sx={{ backgroundColor: '#ffffcc', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>
                       {ligne.unite === 'KAR' ? 'CRN' : (ligne.unite === 'ST' ? 'pce' : (ligne.unite || 'pce'))}
                     </TableCell> {/* Unité avec conversion KAR -> CRN et ST -> pce */}
