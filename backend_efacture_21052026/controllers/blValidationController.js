@@ -1,5 +1,5 @@
 const db = require('../models');
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 
 const { BlValidation, SapVbrpItem, SapVbrkHeader, DownloadedInvoice, InvoiceTotals, FneInvoice } = db;
 
@@ -461,6 +461,63 @@ exports.list = async (req, res) => {
     return res.json({ success: true, data, count: data.length });
   } catch (error) {
     console.error('list bl-validations:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * GET /api/bl-validations/exports
+ * Liste des factures EXPORT certifiées (invoice_type_code='FACTURE_EXPORT' + certificat FNE),
+ * pour affichage + impression sur "Statut Facture" — SANS validation BL (l'export n'a pas
+ * de BL SAP). SQL BRUT (prod-safe : le modèle DownloadedInvoice sélectionne is_sent, absente
+ * en prod). Filtres : search (n°/client), dates ; pagination limit/offset.
+ */
+exports.listExports = async (req, res) => {
+  try {
+    const seq = db.sequelize;
+    const { search, startDate, endDate } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+    const repl = { limit, offset };
+    let extra = '';
+    if (search && String(search).trim()) { extra += ' AND (d.numero LIKE :s OR d.client LIKE :s)'; repl.s = `%${String(search).trim()}%`; }
+    if (startDate) { extra += ' AND d.download_date >= :sd'; repl.sd = `${startDate} 00:00:00`; }
+    if (endDate)   { extra += ' AND d.download_date <= :ed'; repl.ed = `${endDate} 23:59:59`; }
+
+    const baseFrom = `
+      FROM downloaded_invoices d
+      WHERE d.invoice_type_code = 'FACTURE_EXPORT'
+        AND EXISTS (SELECT 1 FROM fne_invoices f WHERE f.numero_facture = d.numero AND f.type = 'invoice')
+        ${extra}`;
+
+    const rows = await seq.query(
+      `SELECT d.numero AS numero_facture, d.client, d.download_date AS date, d.invoice_type_code AS point_of_sale,
+              (SELECT f.fne_reference FROM fne_invoices f WHERE f.numero_facture = d.numero AND f.type = 'invoice' ORDER BY f.created_at DESC LIMIT 1) AS fne_reference,
+              (SELECT f.fne_token     FROM fne_invoices f WHERE f.numero_facture = d.numero AND f.type = 'invoice' ORDER BY f.created_at DESC LIMIT 1) AS fne_token,
+              (SELECT l.total_ttc FROM logs_actions l WHERE l.numero_facture = d.numero AND l.SendBy IS NOT NULL AND l.invoice_type = 'invoice' ORDER BY l.id DESC LIMIT 1) AS total_ttc_raw
+       ${baseFrom}
+       ORDER BY d.id DESC
+       LIMIT :limit OFFSET :offset`,
+      { replacements: repl, type: QueryTypes.SELECT });
+
+    const cnt = await seq.query(`SELECT COUNT(*) AS total ${baseFrom}`, { replacements: repl, type: QueryTypes.SELECT });
+    const total = cnt[0] ? Number(cnt[0].total) : 0;
+
+    const data = rows.map(r => ({
+      numero_facture: r.numero_facture,
+      client: r.client,
+      date: r.date,
+      point_of_sale: r.point_of_sale,
+      fne_reference: r.fne_reference,
+      fne_token: r.fne_token,
+      // total_ttc est stocké ×10 (règle applicative) → on divise pour l'affichage.
+      total: (r.total_ttc_raw != null) ? Number(r.total_ttc_raw) / 10 : null,
+      found: true,
+    }));
+    return res.json({ success: true, data, count: data.length, total });
+  } catch (error) {
+    console.error('listExports bl-validations:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 };

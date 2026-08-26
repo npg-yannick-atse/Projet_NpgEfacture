@@ -10,6 +10,9 @@ const canView = requirePermission(['bl.view', 'bl.validate_logistique', 'bl.vali
 // Historique des validations
 router.get('/', canView, ctrl.list);
 
+// Liste des factures EXPORT certifiées (affichage + impression, sans validation BL)
+router.get('/exports', canView, ctrl.listExports);
+
 // Infos d'une facture + état de validation
 router.get('/invoice/:numero', canView, ctrl.getInvoiceForValidation);
 

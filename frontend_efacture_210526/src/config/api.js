@@ -73,6 +73,7 @@ export const API_ENDPOINTS = {
   },
   BL_VALIDATIONS: {
     LIST: `${API_BASE_URL}/api/bl-validations`,
+    EXPORTS: `${API_BASE_URL}/api/bl-validations/exports`,
     INVOICE: (numero) => `${API_BASE_URL}/api/bl-validations/invoice/${encodeURIComponent(numero)}`,
     VALIDATE_LOGISTIQUE: (numero) => `${API_BASE_URL}/api/bl-validations/invoice/${encodeURIComponent(numero)}/logistique`,
     VALIDATE_COMMERCIAL: (numero) => `${API_BASE_URL}/api/bl-validations/invoice/${encodeURIComponent(numero)}/commercial`,

@@ -88,6 +88,15 @@ const BlValidationPage = () => {
   const [histEnd, setHistEnd] = useState(todayStr());
   const [histSearch, setHistSearch] = useState(''); // recherche n° facture ou n° BL
 
+  // ── Mode "Factures Export" : liste + impression, SANS validation BL ──
+  const [mode, setMode] = useState('bl'); // 'bl' | 'export'
+  const [expRows, setExpRows] = useState([]);
+  const [expLoading, setExpLoading] = useState(false);
+  const [expSearch, setExpSearch] = useState('');
+  const [expTotal, setExpTotal] = useState(0);
+  const [expOffset, setExpOffset] = useState(0);
+  const EXP_LIMIT = 100;
+
   const showInfo = (m) => { setInfo(m); setTimeout(() => setInfo(''), 5000); };
 
   const loadHistory = useCallback(async () => {
@@ -283,6 +292,34 @@ const BlValidationPage = () => {
     }
   };
 
+  // ── Chargement de la liste des factures EXPORT (mode "Factures Export") ──
+  const loadExports = useCallback(async () => {
+    setExpLoading(true);
+    try {
+      const params = { limit: EXP_LIMIT, offset: expOffset };
+      if (expSearch && expSearch.trim()) params.search = expSearch.trim();
+      const res = await axios.get(API_ENDPOINTS.BL_VALIDATIONS.EXPORTS, { headers, params });
+      setExpRows(res.data.data || []);
+      setExpTotal(res.data.total || 0);
+    } catch (e) {
+      setError('Export: ' + (e.response?.data?.error || e.message));
+      setExpRows([]);
+    } finally {
+      setExpLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expSearch, expOffset]);
+
+  useEffect(() => { if (mode === 'export') loadExports(); }, [mode, loadExports]);
+
+  // Sélection "tout" pour l'impression groupée des export (uniquement celles avec token FNE).
+  const getPrintableExport = () => expRows.filter((r) => r.fne_token).map((r) => r.numero_facture);
+  const toggleSelectAllExport = () => setBulkSelected((prev) => {
+    const all = getPrintableExport();
+    const allSel = all.length > 0 && all.every((x) => prev.has(x));
+    return new Set(allSel ? [] : all);
+  });
+
   const v = invoice?.validation;
   const statut = v?.statut || 'en_attente';
   const logistiqueDone = isLogiDone(statut);
@@ -299,9 +336,22 @@ const BlValidationPage = () => {
         </Typography>
       </Box>
 
+      <ToggleButtonGroup
+        value={mode}
+        exclusive
+        size="small"
+        sx={{ mb: 2 }}
+        onChange={(e, val) => { if (val) { setMode(val); setBulkSelected(new Set()); } }}
+      >
+        <ToggleButton value="bl">Validation BL</ToggleButton>
+        <ToggleButton value="export">Factures Export</ToggleButton>
+      </ToggleButtonGroup>
+
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {info  && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setInfo('')}>{info}</Alert>}
 
+      {mode === 'bl' && (
+       <>
       {/* Recherche */}
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
         <form onSubmit={doSearch}>
@@ -770,6 +820,100 @@ const BlValidationPage = () => {
             </TableBody>
           </Table>
         </TableContainer>
+      )}
+       </>
+      )}
+
+      {/* ── Mode Factures Export : liste + impression (sans validation BL) ── */}
+      {mode === 'export' && (
+        <>
+          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+              <TextField
+                size="small"
+                label="Rechercher (n° facture ou client)"
+                value={expSearch}
+                onChange={(e) => { setExpSearch(e.target.value); setExpOffset(0); }}
+                sx={{ minWidth: 320, flexGrow: 1 }}
+                InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
+              />
+              <Button startIcon={<RefreshIcon />} onClick={loadExports}>Rafraîchir</Button>
+              <Button
+                variant="contained"
+                startIcon={<PrintIcon />}
+                disabled={bulkSelected.size === 0 || bulkPrinting}
+                onClick={printSelected}
+              >
+                {bulkPrinting ? 'Génération du PDF…' : `Imprimer la sélection (${bulkSelected.size})`}
+              </Button>
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {expTotal} facture(s) export certifiée(s). Coche des lignes puis « Imprimer la sélection » (un seul PDF), ou imprime ligne par ligne.
+            </Typography>
+          </Paper>
+
+          {expLoading ? (
+            <Box textAlign="center" py={3}><CircularProgress size={28} /></Box>
+          ) : expRows.length === 0 ? (
+            <Alert severity="info">Aucune facture export trouvée.</Alert>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                    <TableCell padding="checkbox">
+                      {(() => {
+                        const all = getPrintableExport();
+                        const allSel = all.length > 0 && all.every((n) => bulkSelected.has(n));
+                        const someSel = all.some((n) => bulkSelected.has(n));
+                        return <Checkbox size="small" checked={allSel} indeterminate={someSel && !allSel} onChange={toggleSelectAllExport} />;
+                      })()}
+                    </TableCell>
+                    <TableCell>N° Facture</TableCell>
+                    <TableCell>Client</TableCell>
+                    <TableCell>Date</TableCell>
+                    <TableCell align="right">Montant</TableCell>
+                    <TableCell>Réf. FNE</TableCell>
+                    <TableCell align="right">Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {expRows.map((r) => (
+                    <TableRow key={r.numero_facture} hover>
+                      <TableCell padding="checkbox">
+                        {r.fne_token && (
+                          <Checkbox size="small" checked={bulkSelected.has(r.numero_facture)} onChange={() => toggleSelect(r.numero_facture)} />
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{r.numero_facture}</TableCell>
+                      <TableCell>{r.client || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>{fmtDate(r.date)}</TableCell>
+                      <TableCell align="right">{fmtMontant(r.total)}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{r.fne_reference || '—'}</TableCell>
+                      <TableCell align="right">
+                        <Tooltip title={r.fne_token ? 'Imprimer la facture FNE' : 'Aucune facture FNE disponible'}>
+                          <span>
+                            <IconButton size="small" color="primary" disabled={!r.fne_token} onClick={() => printFne(r)}>
+                              <PrintIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          {expTotal > EXP_LIMIT && (
+            <Stack direction="row" spacing={2} alignItems="center" justifyContent="center" sx={{ mt: 2 }}>
+              <Button disabled={expOffset === 0} onClick={() => setExpOffset((o) => Math.max(0, o - EXP_LIMIT))}>Précédent</Button>
+              <Typography variant="body2">{Math.min(expOffset + 1, expTotal)}–{Math.min(expOffset + EXP_LIMIT, expTotal)} / {expTotal}</Typography>
+              <Button disabled={expOffset + EXP_LIMIT >= expTotal} onClick={() => setExpOffset((o) => o + EXP_LIMIT)}>Suivant</Button>
+            </Stack>
+          )}
+        </>
       )}
     </Box>
   );
