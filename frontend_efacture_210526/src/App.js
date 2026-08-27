@@ -85,7 +85,7 @@ const DOSSIER_KEY_ALIASES = [
   'no_dossier', 'n_dossier', 'dossier', 'Dossier', 'NDossier'
 ];
 const normalizeDossierKey = (s) => (s || '').toString().toLowerCase()
-  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .replace(/[^a-z0-9]/g, '');
 const NORMALIZED_DOSSIER_ALIASES = DOSSIER_KEY_ALIASES.map(normalizeDossierKey);
 
