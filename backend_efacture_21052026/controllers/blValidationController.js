@@ -495,7 +495,8 @@ exports.listExports = async (req, res) => {
       `SELECT d.numero AS numero_facture, d.client, d.download_date AS date, d.invoice_type_code AS point_of_sale,
               (SELECT f.fne_reference FROM fne_invoices f WHERE f.numero_facture = d.numero AND f.type = 'invoice' ORDER BY f.created_at DESC LIMIT 1) AS fne_reference,
               (SELECT f.fne_token     FROM fne_invoices f WHERE f.numero_facture = d.numero AND f.type = 'invoice' ORDER BY f.created_at DESC LIMIT 1) AS fne_token,
-              (SELECT l.total_ttc FROM logs_actions l WHERE l.numero_facture = d.numero AND l.SendBy IS NOT NULL AND l.invoice_type = 'invoice' ORDER BY l.id DESC LIMIT 1) AS total_ttc_raw
+              (SELECT t.total_ttc FROM invoice_totals t WHERE t.numero_facture = d.numero LIMIT 1) AS it_ttc,
+              (SELECT l.total_ttc FROM logs_actions l WHERE l.numero_facture = d.numero AND l.SendBy IS NOT NULL AND l.invoice_type = 'invoice' ORDER BY l.id DESC LIMIT 1) AS log_ttc
        ${baseFrom}
        ORDER BY d.id DESC
        LIMIT :limit OFFSET :offset`,
@@ -511,8 +512,9 @@ exports.listExports = async (req, res) => {
       point_of_sale: r.point_of_sale,
       fne_reference: r.fne_reference,
       fne_token: r.fne_token,
-      // total_ttc est stocké ×10 (règle applicative) → on divise pour l'affichage.
-      total: (r.total_ttc_raw != null) ? Number(r.total_ttc_raw) / 10 : null,
+      // Montant réel : invoice_totals.total_ttc est réel. Les factures export sont
+      // importées (template) → logs.total_ttc est déjà réel (PAS ×10). On ne divise donc pas.
+      total: (r.it_ttc != null) ? Number(r.it_ttc) : (r.log_ttc != null ? Number(r.log_ttc) : null),
       found: true,
     }));
     return res.json({ success: true, data, count: data.length, total });
