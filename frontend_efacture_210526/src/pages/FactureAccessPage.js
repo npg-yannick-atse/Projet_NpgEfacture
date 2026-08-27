@@ -39,6 +39,19 @@ const EXCEL_COLUMNS = [
   ['Numero de sticker', 'numero_sticker'],
 ];
 
+// Colonnes pour l'import Microsoft Access : noms EXACTS des champs de table_facturation,
+// dans l'ordre, avec les bons types (date réelle, montant numérique, reste en texte).
+const ACCESS_COLUMNS = [
+  ['code_sap', 'code_client_sap', 'text'],
+  ['nom_clts', 'nom1', 'text'],
+  ['date_fact', 'date_facturation', 'date'],
+  ['num_bl', 'numero_bl', 'text'],
+  ['num_fact', 'numero_facture', 'text'],
+  ['mt_fact', 'montant_facture', 'num'],
+  ['num_Stickers', 'numero_sticker', 'text'],
+  ['mois_facturation', 'mois_facture', 'text'],
+];
+
 const FactureAccessPage = () => {
   const { isAdmin, hasPermission } = useAuth();
   const headers = getAuthHeaders();
@@ -95,6 +108,29 @@ const FactureAccessPage = () => {
     XLSX.writeFile(wb, `facture_access_${suffix}.xlsx`);
   };
 
+  // Export au format Microsoft Access (import direct dans table_facturation).
+  const exportForAccess = () => {
+    if (!rows.length) return;
+    const aoa = [ACCESS_COLUMNS.map(([h]) => h)];
+    for (const r of rows) {
+      aoa.push(ACCESS_COLUMNS.map(([, key, type]) => {
+        const v = r[key];
+        if (v === null || v === undefined || v === '') return '';
+        if (type === 'date') {
+          const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+          return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0) : v;
+        }
+        if (type === 'num') return Number(v);
+        return String(v); // texte : préserve les zéros de tête (code, n° facture, sticker)
+      }));
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'table_facturation');
+    const suffix = mode === 'numero' ? numero.trim() : `${startDate}_${endDate}`;
+    XLSX.writeFile(wb, `facture_access_ACCESS_${suffix}.xlsx`, { cellDates: true });
+  };
+
   if (!isAdmin() && !hasPermission('facture_access.view')) {
     return <Box p={3}><Alert severity="error">Accès non autorisé.</Alert></Box>;
   }
@@ -146,6 +182,9 @@ const FactureAccessPage = () => {
 
           <Button variant="outlined" color="success" startIcon={<DownloadIcon />} onClick={exportExcel} disabled={!rows.length}>
             Extraire Excel ({rows.length})
+          </Button>
+          <Button variant="contained" color="success" startIcon={<DownloadIcon />} onClick={exportForAccess} disabled={!rows.length}>
+            Extraire pour Access
           </Button>
         </Stack>
       </Paper>
