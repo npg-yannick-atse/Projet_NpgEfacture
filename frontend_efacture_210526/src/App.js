@@ -8337,7 +8337,7 @@ function MainApp() {
             : <Box sx={{ p: 3 }}><Alert severity="error">Accès non autorisé.</Alert></Box>
 
         ) : viewMode === 'facture-access' ? (
-          isAdmin() ? <FactureAccessPage /> : <Box sx={{ p: 3 }}><Alert severity="error">Accès réservé aux administrateurs.</Alert></Box>
+          (isAdmin() || hasPermission('facture_access.view')) ? <FactureAccessPage /> : <Box sx={{ p: 3 }}><Alert severity="error">Accès non autorisé.</Alert></Box>
 
         ) : null}
       </Box>

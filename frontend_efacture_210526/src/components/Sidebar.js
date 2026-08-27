@@ -26,7 +26,7 @@ const Sidebar = ({
 }) => {
   const { isAdmin, hasPermission } = useAuth();
   const showSettings = isAdmin();
-  const showFactureAccess = isAdmin();
+  const showFactureAccess = isAdmin() || hasPermission('facture_access.view');
   const showCancellations = hasPermission('audit.view') || hasPermission('fne.cancel_duplicate');
   const showBlValidation = hasPermission('bl.view')
     || hasPermission('bl.validate_logistique')

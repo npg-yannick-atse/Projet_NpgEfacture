@@ -10,6 +10,14 @@
 const db = require('../models');
 const { QueryTypes } = require('sequelize');
 
+// Numéro de sticker = partie de la référence FNE APRÈS le NCC (…V) — sans le préfixe
+// "A" des avoirs. Ex. "A9904279V2600000392" -> "2600000392" ; "9904279V26000010858" -> "26000010858".
+function stickerNum(ref) {
+  if (!ref) return null;
+  const m = String(ref).match(/^A?\d+V(.+)$/i);
+  return m ? m[1] : String(ref);
+}
+
 // Extrait "Code Client:" et "BL:" du message commercial.
 function parseCommercialMessage(cm) {
   const s = String(cm || '');
@@ -114,7 +122,7 @@ exports.list = async (req, res) => {
         montant_facture: montant,
         total_a_payer: totalPayer,
         mois_facture: l.mois_facture || null,
-        numero_sticker: fMap[num] || l.reference || null,
+        numero_sticker: stickerNum(fMap[num] || l.reference),
       };
     });
 

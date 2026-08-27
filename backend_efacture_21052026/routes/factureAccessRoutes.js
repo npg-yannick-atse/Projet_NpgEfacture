@@ -1,10 +1,10 @@
 const { Router } = require('express');
 const ctrl = require('../controllers/factureAccessController');
-const { requireAdmin } = require('../middleware/requireRole');
+const { requirePermission } = require('../middleware/requireRole');
 
 const router = Router();
 
-// Registre des factures certifiées — réservé aux administrateurs.
-router.get('/', requireAdmin(), ctrl.list);
+// Registre des factures certifiées — permission dédiée.
+router.get('/', requirePermission('facture_access.view'), ctrl.list);
 
 module.exports = router;

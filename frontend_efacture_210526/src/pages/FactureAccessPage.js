@@ -40,7 +40,7 @@ const EXCEL_COLUMNS = [
 ];
 
 const FactureAccessPage = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   const headers = getAuthHeaders();
 
   const [mode, setMode] = useState('dates'); // 'dates' | 'numero'
@@ -95,8 +95,8 @@ const FactureAccessPage = () => {
     XLSX.writeFile(wb, `facture_access_${suffix}.xlsx`);
   };
 
-  if (!isAdmin()) {
-    return <Box p={3}><Alert severity="error">Accès réservé aux administrateurs.</Alert></Box>;
+  if (!isAdmin() && !hasPermission('facture_access.view')) {
+    return <Box p={3}><Alert severity="error">Accès non autorisé.</Alert></Box>;
   }
 
   return (
