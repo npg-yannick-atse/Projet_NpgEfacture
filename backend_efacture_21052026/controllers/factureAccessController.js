@@ -43,12 +43,13 @@ exports.list = async (req, res) => {
     const logs = await seq.query(
       `SELECT l.numero_facture,
               l.reference,
+              l.invoice_type AS doc_type,
               DATE_FORMAT(l.SendOn, '%Y-%m-%d') AS date_facturation,
               DATE_FORMAT(l.SendOn, '%m/%Y')    AS mois_facture,
               l.total_ttc AS log_ttc,
               l.client_name
          FROM logs_actions l
-        WHERE l.invoice_type = 'invoice' AND l.SendBy IS NOT NULL AND ${filter}
+        WHERE l.invoice_type IN ('invoice', 'refund') AND l.SendBy IS NOT NULL AND ${filter}
         ORDER BY l.SendOn DESC
         LIMIT :limit`,
       { replacements: { ...repl, limit }, type: QueryTypes.SELECT });
@@ -64,9 +65,10 @@ exports.list = async (req, res) => {
       { replacements: numeros, type: QueryTypes.SELECT });
     const tMap = {}; totals.forEach(t => { tMap[t.numero_facture] = t; });
 
-    // 3) Référence FNE = numéro de sticker.
+    // 3) Référence FNE = numéro de sticker (facture 9904… OU avoir A9904…).
+    //    Pas de filtre sur le type : un numéro est soit une facture, soit un avoir.
     const fnes = await seq.query(
-      `SELECT numero_facture, fne_reference FROM fne_invoices WHERE type='invoice' AND numero_facture IN (${ph}) ORDER BY created_at ASC`,
+      `SELECT numero_facture, fne_reference, type FROM fne_invoices WHERE numero_facture IN (${ph}) ORDER BY created_at ASC`,
       { replacements: numeros, type: QueryTypes.SELECT });
     const fMap = {}; fnes.forEach(f => { fMap[f.numero_facture] = f.fne_reference; }); // ASC + écrasement ⇒ plus récente
 
@@ -101,6 +103,7 @@ exports.list = async (req, res) => {
       else montant = null;
       const totalPayer = (t.total_a_payer != null) ? Number(t.total_a_payer) : montant;
       return {
+        type: l.doc_type === 'refund' ? 'avoir' : 'facture',
         code_client_sap: dd.kunnr || null,
         nom1: l.client_name || dd.client || null,
         compte_contribuable: dd.ncc || null,

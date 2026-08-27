@@ -171,6 +171,7 @@ const FactureAccessPage = () => {
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
+                  <TableCell sx={{ bgcolor: '#dceaf5', fontWeight: 600, whiteSpace: 'nowrap' }}>Type</TableCell>
                   {EXCEL_COLUMNS.map(([label]) => (
                     <TableCell key={label} sx={{ bgcolor: '#dceaf5', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</TableCell>
                   ))}
@@ -179,6 +180,11 @@ const FactureAccessPage = () => {
               <TableBody>
                 {rows.map((r, i) => (
                   <TableRow key={`${r.numero_facture}-${i}`} hover>
+                    <TableCell>
+                      <Chip size="small" label={r.type === 'avoir' ? 'Avoir' : 'Facture'}
+                        color={r.type === 'avoir' ? 'warning' : 'default'}
+                        variant={r.type === 'avoir' ? 'filled' : 'outlined'} />
+                    </TableCell>
                     <TableCell sx={{ fontFamily: 'monospace' }}>{r.code_client_sap || '—'}</TableCell>
                     <TableCell>{r.nom1 || '—'}</TableCell>
                     <TableCell sx={{ fontFamily: 'monospace' }}>{r.compte_contribuable || '—'}</TableCell>
