@@ -67,6 +67,7 @@ import Login from './pages/Login';
 import SettingsPage from './pages/SettingsPage';
 import FneCancellationsPage from './pages/FneCancellationsPage';
 import BlValidationPage from './pages/BlValidationPage';
+import FactureAccessPage from './pages/FactureAccessPage';
 import AutoDownloadPage from './pages/AutoDownloadPage';
 import NonFnePage from './pages/NonFnePage';
 import HomePage from './pages/HomePage';
@@ -6042,6 +6043,7 @@ function MainApp() {
         onBlValidationClick={() => { setIsDetailViewMode(false); setViewMode('bl-validation'); }}
         onAutoDownloadClick={() => { setIsDetailViewMode(false); setViewMode('auto-download'); }}
         onNonFneClick={() => { setIsDetailViewMode(false); setViewMode('non-fne'); }}
+        onFactureAccessClick={() => { setIsDetailViewMode(false); setViewMode('facture-access'); }}
       />
 
       <Box component="main" sx={{ flexGrow: 1, p: 3, marginTop: '64px' }}>
@@ -8333,6 +8335,9 @@ function MainApp() {
           (isAdmin() || hasPermission('non_fne.view') || hasPermission('non_fne.manage') || hasPermission('non_fne.delete'))
             ? <NonFnePage />
             : <Box sx={{ p: 3 }}><Alert severity="error">Accès non autorisé.</Alert></Box>
+
+        ) : viewMode === 'facture-access' ? (
+          isAdmin() ? <FactureAccessPage /> : <Box sx={{ p: 3 }}><Alert severity="error">Accès réservé aux administrateurs.</Alert></Box>
 
         ) : null}
       </Box>

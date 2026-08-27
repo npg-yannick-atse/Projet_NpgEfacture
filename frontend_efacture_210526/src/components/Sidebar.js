@@ -9,6 +9,7 @@ import FactCheckIcon from '@mui/icons-material/FactCheck';
 import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import BlockIcon from '@mui/icons-material/Block';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 import { useAuth } from '../contexts/AuthContext';
 
 const Sidebar = ({
@@ -21,9 +22,11 @@ const Sidebar = ({
   onBlValidationClick,
   onAutoDownloadClick,
   onNonFneClick,
+  onFactureAccessClick,
 }) => {
   const { isAdmin, hasPermission } = useAuth();
   const showSettings = isAdmin();
+  const showFactureAccess = isAdmin();
   const showCancellations = hasPermission('audit.view') || hasPermission('fne.cancel_duplicate');
   const showBlValidation = hasPermission('bl.view')
     || hasPermission('bl.validate_logistique')
@@ -96,7 +99,7 @@ const Sidebar = ({
           </ListItem>
         )}
 
-        {(showSettings || showCancellations || showNonFne) && (
+        {(showSettings || showCancellations || showNonFne || showFactureAccess) && (
           <>
             <Divider sx={{ my: 1 }} />
             <Box sx={{ px: 2, pt: 0.5, pb: 0.5 }}>
@@ -105,6 +108,15 @@ const Sidebar = ({
               </Typography>
             </Box>
           </>
+        )}
+
+        {showFactureAccess && (
+          <ListItem disablePadding>
+            <ListItemButton onClick={onFactureAccessClick}>
+              <ListItemIcon><AssessmentIcon /></ListItemIcon>
+              <ListItemText primary="Facture Access" />
+            </ListItemButton>
+          </ListItem>
         )}
 
         {showCancellations && (

@@ -110,6 +110,7 @@ app.use('/api/point-of-sale', require('./routes/pointOfSaleRoutes'))
 app.use('/api/settings', require('./routes/settingsRoutes'))
 app.use('/api/invoice-types', require('./routes/invoiceTypesRoutes'))
 app.use('/api/bl-validations', require('./routes/blValidationRoutes'))
+app.use('/api/facture-access', require('./routes/factureAccessRoutes'))
 app.use('/api/auto-download', require('./routes/autoDownloadRoutes'))
 app.use('/api/non-fne', require('./routes/nonFneRoutes'))
 

@@ -46,6 +46,9 @@ export const API_ENDPOINTS = {
     UPDATE_FIELD: `${API_BASE_URL}/api/inline-fields`,
     BY_INVOICE: (invoiceNumber) => `${API_BASE_URL}/api/inline-fields/invoice/${invoiceNumber}`,
   },
+  FACTURE_ACCESS: {
+    LIST: `${API_BASE_URL}/api/facture-access`,
+  },
   POINT_OF_SALE: {
     BASE: `${API_BASE_URL}/api/point-of-sale`,
     BULK_UPDATE: `${API_BASE_URL}/api/point-of-sale/bulk-update`
